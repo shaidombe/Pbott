@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { useApp } from '@/app/lib/hooks/useApp';
+import { useApp } from '@/app/contexts/AppContext';
 import { collection, getDocs, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase/config';
 import { World, WorldCategory } from '@/app/types';
@@ -9,9 +9,8 @@ import { useRouter } from 'next/navigation';
 import { getWorldName, getWorldDescription, getWorldIcon } from '@/app/lib/utils/worldUtils';
 
 export default function WorldsSetup() {
-  const { user } = useApp();
+  const { user, worlds, refreshWorlds } = useApp();
   const router = useRouter();
-  const [worlds, setWorlds] = useState<World[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -25,13 +24,13 @@ export default function WorldsSetup() {
         id: doc.id,
         ...doc.data()
       })) as World[];
-      setWorlds(worldsData);
+      refreshWorlds(worldsData);
     } catch (error: unknown) {
       console.error('Error loading worlds:', error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, refreshWorlds]);
 
   useEffect(() => {
     loadWorlds();

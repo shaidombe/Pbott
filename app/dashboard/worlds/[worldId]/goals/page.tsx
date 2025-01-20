@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { useApp } from '@/app/lib/hooks/useApp';
+import { useApp } from '@/app/contexts/AppContext';
 import { doc, getDoc, collection, addDoc, getDocs } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase/config';
 import { World, Goal } from '@/app/types';

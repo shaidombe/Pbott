@@ -1,3 +1,5 @@
+'use client';
+
 import { createContext, useContext, useState, useEffect } from 'react';
 import { User, World, BigStone, DailyPlan } from '@/app/types';
 import { auth, db } from '@/app/lib/firebase/config';
@@ -14,9 +16,21 @@ interface AppContextType {
   googleCalendar: GoogleCalendarService | null;
   setCurrentWorld: (world: World) => void;
   syncCalendar: () => Promise<void>;
+  refreshWorlds: (worlds: World[]) => void;
 }
 
-export const AppContext = createContext<AppContextType | undefined>(undefined);
+export const AppContext = createContext<AppContextType>({
+  user: null,
+  worlds: [],
+  currentWorld: null,
+  bigStones: [],
+  todaysPlan: null,
+  isLoading: true,
+  googleCalendar: null,
+  setCurrentWorld: () => {},
+  syncCalendar: async () => {},
+  refreshWorlds: () => {}
+});
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -95,7 +109,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       googleCalendar,
       setCurrentWorld,
-      syncCalendar
+      syncCalendar,
+      refreshWorlds: setWorlds
     }}>
       {children}
     </AppContext.Provider>

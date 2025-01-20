@@ -2,8 +2,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase/config';
-import { useApp } from '@/app/lib/hooks/useApp';
-import { World, Goal, Task } from '@/app/types';
+import { useApp } from '@/app/contexts/AppContext';
+import { Goal, Task } from '@/app/types';
 import Link from 'next/link';
 
 interface DashboardData {
@@ -14,8 +14,7 @@ interface DashboardData {
 }
 
 export default function Dashboard() {
-  const { user } = useApp();
-  const [activeWorlds, setActiveWorlds] = useState<World[]>([]);
+  const { user, worlds } = useApp();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [todayTasks, setTodayTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -26,17 +25,11 @@ export default function Dashboard() {
     if (!user) return;
     setIsLoading(true);
     try {
-      // טעינת עולמות פעילים
-      const worldsRef = collection(db, `users/${user.id}/worlds`);
-      const worldsSnapshot = await getDocs(worldsRef);
-      const worlds = worldsSnapshot.docs
-        .map(doc => ({ ...doc.data(), id: doc.id })) as World[];
-      const active = worlds.filter(w => w.isActive);
-      setActiveWorlds(active);
+      const activeWorlds = worlds.filter(w => w.isActive);
 
       // טעינת כל המטרות מכל העולמות הפעילים
       let allGoals: Goal[] = [];
-      for (const world of active) {
+      for (const world of activeWorlds) {
         const goalsRef = collection(db, `users/${user.id}/worlds/${world.id}/goals`);
         const goalsSnapshot = await getDocs(goalsRef);
         const worldGoals = goalsSnapshot.docs
@@ -78,7 +71,7 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, worlds]);
 
   useEffect(() => {
     loadDashboardData();
@@ -106,7 +99,7 @@ export default function Dashboard() {
 
       {/* תצוגת התקדמות */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {activeWorlds.map(world => (
+        {worlds.map(world => (
           <div key={world.id} className="bg-white p-6 rounded-xl shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">{world.name}</h2>

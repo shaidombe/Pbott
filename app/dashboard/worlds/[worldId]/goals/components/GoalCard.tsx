@@ -4,7 +4,7 @@ import { Goal, Task } from '@/app/types';
 import TaskList from './TaskList';
 import { collection, getDocs, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase/config';
-import { useApp } from '@/app/lib/hooks/useApp';
+import { useApp } from '@/app/contexts/AppContext';
 import { EllipsisHorizontalIcon } from '@heroicons/react/24/outline';
 
 interface GoalCardProps {

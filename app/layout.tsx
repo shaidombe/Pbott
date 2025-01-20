@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from '@/app/components/providers'
-import { AppProvider } from '@/app/lib/contexts/AppContext';
+import { AppProvider } from '@/app/contexts/AppContext';
 
 export const metadata: Metadata = {
   title: "Pbot - Life Planning System",
