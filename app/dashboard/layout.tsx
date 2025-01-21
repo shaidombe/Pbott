@@ -100,12 +100,12 @@ export default function DashboardLayout({
                         onError={(e) => {
                           // Fallback to default avatar if image fails to load
                           const target = e.target as HTMLImageElement;
-                          target.src = '/default-avatar.png';
+                          target.src = '/default-avatar.svg';
                         }}
                       />
                     ) : (
                       <Image
-                        src="/default-avatar.png"
+                        src="/default-avatar.svg"
                         alt="תמונת ברירת מחדל"
                         width={32}
                         height={32}

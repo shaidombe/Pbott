@@ -3,8 +3,9 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { User, World, BigStone, DailyPlan } from '@/app/types';
 import { auth, db } from '@/app/lib/firebase/config';
-import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, getDocs } from 'firebase/firestore';
 import { GoogleCalendarService } from '@/app/lib/services/googleCalendar';
+import { onAuthStateChanged } from 'firebase/auth';
 
 interface AppContextType {
   user: User | null;
@@ -40,45 +41,79 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [todaysPlan] = useState<DailyPlan | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [googleCalendar, setGoogleCalendar] = useState<GoogleCalendarService | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
-    const unsubAuth = auth.onAuthStateChanged(async (firebaseUser) => {
+    console.log('AppContext: Setting up auth listener');
+    let worldsUnsubscribe: (() => void) | undefined;
+
+    const authUnsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      console.log('AppContext: Auth state changed', { 
+        hasUser: !!firebaseUser 
+      });
+
       if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data() as User;
-          setUser(userData);
+        const now = new Date();
+        setUser({
+          id: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          name: firebaseUser.displayName || '',
+          photoURL: firebaseUser.photoURL || '',
+          googleCalendarConnected: false,
+          createdAt: now,
+          updatedAt: now
+        });
+        
+        // הגדר האזנה לעולמות
+        const worldsRef = collection(db, `users/${firebaseUser.uid}/worlds`);
+        worldsUnsubscribe = onSnapshot(worldsRef, (snapshot) => {
+          const worldsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as World[];
           
-          // יצירת שירות Google Calendar אם יש טוקן
-          if (userData.googleAccessToken) {
-            setGoogleCalendar(new GoogleCalendarService(userData.googleAccessToken));
-          }
-        }
+          const normalizedWorlds = worldsData.map(world => ({
+            ...world,
+            isActive: world.isActive ?? false,
+            timeSlots: world.timeSlots ?? [],
+            stats: world.stats ?? {
+              totalGoals: 0,
+              completedGoals: 0,
+              timeInvested: 0
+            }
+          }));
+          
+          console.log('AppContext: Worlds updated from Firestore', { 
+            count: normalizedWorlds.length 
+          });
+          
+          setWorlds(normalizedWorlds);
+        }, (error) => {
+          console.error('AppContext: Error in worlds subscription:', error);
+        });
+
       } else {
+        // נקה את המצב כשהמשתמש מתנתק
         setUser(null);
-        setGoogleCalendar(null);
+        setWorlds([]);
+        if (worldsUnsubscribe) {
+          worldsUnsubscribe();
+          worldsUnsubscribe = undefined;
+        }
       }
+      
+      setIsAuthReady(true);
       setIsLoading(false);
     });
 
-    return () => unsubAuth();
+    // נקה את כל ההאזנות כשהקומפוננטה מתפרקת
+    return () => {
+      if (worldsUnsubscribe) {
+        worldsUnsubscribe();
+      }
+      authUnsubscribe();
+    };
   }, []);
-
-  useEffect(() => {
-    if (!user) return;
-
-    // האזנה לשינויים בעולמות
-    const q = query(collection(db, 'worlds'), where('userId', '==', user.id));
-    const unsubWorlds = onSnapshot(q, (snapshot) => {
-      const worldsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as World[];
-      setWorlds(worldsData);
-    });
-
-    return () => unsubWorlds();
-  }, [user]);
 
   const syncCalendar = async () => {
     if (!googleCalendar || !user) return;
@@ -99,6 +134,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const refreshWorlds = (newWorlds: World[]) => {
+    console.log('AppContext: Manual worlds refresh requested', { 
+      count: newWorlds.length 
+    });
+    // לא צריך לעשות כלום כי ה-snapshot יתפוס את השינויים
+  };
+
+  if (!isAuthReady) {
+    console.log('AppContext: Waiting for auth to be ready');
+    return <div>Loading...</div>;
+  }
+
   return (
     <AppContext.Provider value={{
       user,
@@ -110,7 +157,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       googleCalendar,
       setCurrentWorld,
       syncCalendar,
-      refreshWorlds: setWorlds
+      refreshWorlds
     }}>
       {children}
     </AppContext.Provider>

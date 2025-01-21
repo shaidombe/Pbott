@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase/config';
 import { useApp } from '@/app/contexts/AppContext';
@@ -20,12 +20,27 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [data, setData] = useState<DashboardData[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const isDataLoaded = useRef(false);
 
   const loadDashboardData = useCallback(async () => {
-    if (!user) return;
+    if (!user || isDataLoaded.current) {
+      console.log('Dashboard: Skipping load - already loaded or no user', { 
+        isLoaded: isDataLoaded.current, 
+        hasUser: !!user,
+        worldsCount: worlds.length
+      });
+      return;
+    }
+    
+    console.log('Dashboard: Starting data load', { 
+      userId: user.id,
+      worldsCount: worlds.length
+    });
+
     setIsLoading(true);
     try {
       const activeWorlds = worlds.filter(w => w.isActive);
+      console.log('Dashboard: Active worlds', { count: activeWorlds.length });
 
       // טעינת כל המטרות מכל העולמות הפעילים
       let allGoals: Goal[] = [];
@@ -65,8 +80,14 @@ export default function Dashboard() {
       })) as DashboardData[];
       setData(dashboardData);
 
+      console.log('Dashboard: Data loaded successfully', {
+        goalsCount: allGoals.length,
+        tasksCount: todayTasks.length
+      });
+      
+      isDataLoaded.current = true;
     } catch (error: unknown) {
-      console.error('Error loading dashboard:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('Dashboard: Error loading data:', error);
       setError('אירעה שגיאה בטעינת הנתונים');
     } finally {
       setIsLoading(false);
@@ -74,7 +95,9 @@ export default function Dashboard() {
   }, [user, worlds]);
 
   useEffect(() => {
-    loadDashboardData();
+    if (!isDataLoaded.current) {
+      loadDashboardData();
+    }
   }, [loadDashboardData]);
 
   if (isLoading) {

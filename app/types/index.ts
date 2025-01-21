@@ -13,15 +13,18 @@ export enum WorldCategory {
   WORK = 'WORK',
   FAMILY = 'FAMILY',
   HEALTH = 'HEALTH',
-  LEISURE = 'LEISURE',
+  PERSONAL = 'PERSONAL',
+  SOCIAL = 'SOCIAL',
+  STUDY = 'STUDY',
+  SLEEP = 'SLEEP',
   CUSTOM = 'CUSTOM'
 }
 
-export type TimeSlot = {
+export interface TimeSlot {
   dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   startTime: string;
   endTime: string;
-};
+}
 
 export interface World {
   id: string;
