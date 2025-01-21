@@ -5,6 +5,13 @@ import { db } from '@/app/lib/firebase/config';
 import { useApp } from '@/app/contexts/AppContext';
 import { Goal, Task } from '@/app/types';
 import Link from 'next/link';
+import { format } from 'date-fns';
+import { he } from 'date-fns/locale';
+import WorldsTimeDistribution from '@/app/components/dashboard/WorldsTimeDistribution';
+import ProgressOverview from '@/app/components/dashboard/ProgressOverview';
+import SystemAlerts from '@/app/components/dashboard/SystemAlerts';
+import DailySchedule from '@/app/components/dashboard/DailySchedule';
+import ActiveGoals from '@/app/components/dashboard/ActiveGoals';
 
 interface DashboardData {
   id: string;
@@ -107,74 +114,42 @@ export default function Dashboard() {
   if (error) return <div className="text-red-500">{error}</div>;
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* Hero Section */}
-      <div className="text-center mb-12">
-        <div className="bg-gradient-to-r from-primary-400/90 to-accent-400/90 p-8 rounded-3xl shadow-lg">
-          <h1 className="text-3xl md:text-4xl font-bold mb-3 text-[#31161699]">
-            היי {user?.name}! 👋
-          </h1>
-          <p className="text-[#321f1f99]">
-            הנה מה שקורה בעולמות שלך היום
-          </p>
+    <div className="space-y-6 p-6">
+      {/* Overall Status Section */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h2 className="text-xl font-semibold mb-4">התפלגות זמן</h2>
+          <WorldsTimeDistribution />
+        </div>
+        
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h2 className="text-xl font-semibold mb-4">סטטוס התקדמות</h2>
+          <ProgressOverview />
+        </div>
+        
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h2 className="text-xl font-semibold mb-4">התראות מערכת</h2>
+          <SystemAlerts />
         </div>
       </div>
 
-      {/* תצוגת התקדמות */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {worlds.map(world => (
-          <div key={world.id} className="bg-white p-6 rounded-xl shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">{world.name}</h2>
-              <Link 
-                href={`/dashboard/worlds/${world.id}/goals`}
-                className="text-primary-500 hover:underline text-sm"
-              >
-                צפה במטרות
-              </Link>
-            </div>
-            <div className="space-y-4">
-              {goals
-                .filter(g => g.worldId === world.id)
-                .map(goal => (
-                  <div key={goal.id} className="bg-neutral-50 p-4 rounded-lg">
-                    <h3 className="font-medium mb-2">{goal.title}</h3>
-                    {/* כאן נוסיף פרוגרס בר */}
-                  </div>
-                ))
-              }
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* משימות להיום */}
+      {/* Today's Schedule Section */}
       <div className="bg-white p-6 rounded-xl shadow-sm">
-        <h2 className="text-xl font-semibold mb-4">המשימות שלך להיום</h2>
-        <div className="space-y-2">
-          {todayTasks.map(task => (
-            <div key={task.id} className="flex items-center justify-between p-3 bg-neutral-50 rounded-lg">
-              <span>{task.title}</span>
-              <span className="text-sm text-neutral-700">
-                {task.estimatedDuration} דקות
-              </span>
-            </div>
-          ))}
-          {todayTasks.length === 0 && (
-            <p className="text-neutral-700 text-center py-4">
-              אין משימות מתוכננות להיום
-            </p>
-          )}
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">היום שלך</h2>
+          <div className="text-sm text-neutral-500">
+            {format(new Date(), 'EEEE, d בMMMM', { locale: he })}
+          </div>
         </div>
+        <DailySchedule />
       </div>
 
-      <div className="space-y-6">
-        {data.map(item => (
-          <div key={item.id} className="p-4 bg-white rounded-lg shadow">
-            <h2 className="text-xl font-bold">{item.title}</h2>
-            <p className="text-neutral-800">{item.description}</p>
-          </div>
-        ))}
+      {/* Goals Overview Section */}
+      <div className="bg-white p-6 rounded-xl shadow-sm">
+        <h2 className="text-xl font-semibold mb-4">מטרות פעילות</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <ActiveGoals />
+        </div>
       </div>
     </div>
   );

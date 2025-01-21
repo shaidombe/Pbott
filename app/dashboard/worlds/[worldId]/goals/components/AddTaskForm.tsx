@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Task } from '@/app/types';
 import { useApp } from '@/app/lib/hooks/useApp';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase/config';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
@@ -10,6 +10,7 @@ import "react-datepicker/dist/react-datepicker.css";
 interface AddTaskFormProps {
   worldId: string;
   goalId: string;
+  task?: Task; // אופציונלי - למקרה של עריכה
   onComplete: () => void;
   onCancel: () => void;
 }
@@ -24,19 +25,40 @@ const DURATION_OPTIONS = [
 ] as const;
 
 const PRIORITY_OPTIONS = [
-  { value: 'HIGH', label: 'דחוף', icon: '🔥', className: 'bg-red-500 text-white' },
-  { value: 'MEDIUM', label: 'חשוב מאוד', icon: '🔥🔥', className: 'bg-yellow-500 text-black' },
-  { value: 'LOW', label: 'צריך לעשות', icon: '🔥🔥🔥', className: 'bg-green-500 text-white' }
+  { 
+    value: 'HIGH', 
+    label: 'דחוף', 
+    icon: '⚡', 
+    className: 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+  },
+  { 
+    value: 'MEDIUM', 
+    label: 'חשוב', 
+    icon: '🎯', 
+    className: 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100'
+  },
+  { 
+    value: 'LOW', 
+    label: 'נחמד לעשות', 
+    icon: '📝', 
+    className: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+  }
 ] as const;
 
-export default function AddTaskForm({ worldId, goalId, onComplete, onCancel }: AddTaskFormProps) {
+export default function AddTaskForm({ worldId, goalId, task, onComplete, onCancel }: AddTaskFormProps) {
   const { user } = useApp();
-  const [title, setTitle] = useState('');
-  const [selectedDuration, setSelectedDuration] = useState<string | number>(30);
+  const [title, setTitle] = useState(task?.title || '');
+  const [selectedDuration, setSelectedDuration] = useState<string | number>(task?.estimatedDuration || 30);
   const [customDuration, setCustomDuration] = useState('');
   const [durationUnit, setDurationUnit] = useState<'minutes' | 'hours'>('minutes');
-  const [priority, setPriority] = useState<Task['priority']>('MEDIUM');
-  const [dueDateTime, setDueDateTime] = useState<Date | null>(null);
+  const [priority, setPriority] = useState<Task['priority']>(task?.priority || 'MEDIUM');
+  const [dueDateTime, setDueDateTime] = useState<Date | null>(() => {
+    if (task?.deadline) {
+      const date = new Date(task.deadline);
+      return isNaN(date.getTime()) ? null : date;
+    }
+    return null;
+  });
   const [isLoading, setIsLoading] = useState(false);
 
   const handleDurationChange = (value: string) => {
@@ -53,31 +75,33 @@ export default function AddTaskForm({ worldId, goalId, onComplete, onCancel }: A
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !title.trim()) return;
-
-    const finalDuration = calculateFinalDuration();
-    if (isNaN(finalDuration) || finalDuration <= 0) return;
+    if (!user) return;
 
     setIsLoading(true);
     try {
-      const tasksRef = collection(db, `users/${user.id}/worlds/${worldId}/goals/${goalId}/tasks`);
-      const newTask: Omit<Task, 'id'> = {
+      const taskData = {
+        title,
+        estimatedDuration: calculateFinalDuration(),
+        priority,
+        deadline: dueDateTime ? dueDateTime.toISOString() : null,
+        status: task?.status || 'PENDING',
         worldId,
         goalId,
-        title: title.trim(),
-        description: '',
-        estimatedDuration: finalDuration,
-        priority,
-        status: 'PENDING',
-        deadline: dueDateTime || undefined,
-        createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date().toISOString(),
+        createdAt: task?.createdAt || new Date().toISOString()
       };
 
-      await addDoc(tasksRef, newTask);
+      if (task?.id) {
+        const taskRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${goalId}/tasks/${task.id}`);
+        await updateDoc(taskRef, taskData);
+      } else {
+        const tasksRef = collection(db, `users/${user.id}/worlds/${worldId}/goals/${goalId}/tasks`);
+        await addDoc(tasksRef, taskData);
+      }
+      
       onComplete();
-    } catch (err) {
-      console.error('Error adding task:', err);
+    } catch (error) {
+      console.error('Error saving task:', error);
     } finally {
       setIsLoading(false);
     }
@@ -169,21 +193,23 @@ export default function AddTaskForm({ worldId, goalId, onComplete, onCancel }: A
         <label className="block text-sm font-medium text-gray-700 mb-2">
           דחיפות
         </label>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {PRIORITY_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               onClick={() => setPriority(option.value)}
-              data-selected={priority === option.value}
               className={`
-                flex-1 px-4 py-3 rounded-lg border-2 transition-all
-                flex items-center justify-center gap-2
-                ${option.className}
+                p-3 rounded-lg flex flex-col items-center justify-center
+                transition-all duration-200 ease-in-out
+                ${priority === option.value 
+                  ? option.className
+                  : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'
+                }
               `}
             >
-              <span className="text-lg">{option.icon}</span>
-              <span className="font-medium">{option.label}</span>
+              <span className="text-2xl mb-1">{option.icon}</span>
+              <span className="text-sm font-medium">{option.label}</span>
             </button>
           ))}
         </div>
@@ -202,7 +228,7 @@ export default function AddTaskForm({ worldId, goalId, onComplete, onCancel }: A
           disabled={isLoading}
           className="px-4 py-2 bg-primary-500 text-white rounded-md hover:bg-primary-600 disabled:opacity-50"
         >
-          {isLoading ? 'שומר...' : 'הוסף משימה'}
+          {isLoading ? 'שומר...' : task?.id ? 'עדכן משימה' : 'הוסף משימה'}
         </button>
       </div>
     </form>

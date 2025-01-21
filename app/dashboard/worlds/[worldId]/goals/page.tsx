@@ -2,11 +2,12 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useApp } from '@/app/contexts/AppContext';
-import { doc, getDoc, collection, addDoc, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase/config';
 import { World, Goal } from '@/app/types';
 import { useParams } from 'next/navigation';
 import GoalCard from './components/GoalCard';
+import AddGoalForm from './components/AddGoalForm';
 
 export default function WorldGoals() {
   const { user } = useApp();
@@ -18,33 +19,43 @@ export default function WorldGoals() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddGoal, setShowAddGoal] = useState(false);
-  const [newGoalTitle, setNewGoalTitle] = useState('');
-  const [newGoalDescription, setNewGoalDescription] = useState('');
 
   const loadWorldAndGoals = useCallback(async () => {
     if (!user) return;
     setIsLoading(true);
     try {
-      // Load world
+      // טעינת העולם
       const worldRef = doc(db, `users/${user.id}/worlds/${worldId}`);
       const worldDoc = await getDoc(worldRef);
-      if (!worldDoc.exists()) {
-        console.error('World not found');
-        return;
-      }
+      if (!worldDoc.exists()) throw new Error('World not found');
       setWorld({ id: worldDoc.id, ...worldDoc.data() } as World);
 
-      // Load goals
+      // טעינת המטרות
       const goalsRef = collection(db, `users/${user.id}/worlds/${worldId}/goals`);
-      const snapshot = await getDocs(goalsRef);
-      const goalsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Goal[];
-      setGoals(goalsData);
-    } catch (error: unknown) {
-      console.error('Error loading world and goals:', error instanceof Error ? error.message : 'Unknown error');
-    } finally {
+      const q = query(goalsRef, orderBy('createdAt', 'desc'));
+
+      // הגדרת ה-listener בשביל עדכונים בזמן אמת
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const goalsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          deadline: doc.data().deadline ? new Date(doc.data().deadline) : null,
+          createdAt: doc.data().createdAt ? new Date(doc.data().createdAt) : new Date(),
+          updatedAt: doc.data().updatedAt ? new Date(doc.data().updatedAt) : new Date()
+        })) as Goal[];
+        
+        setGoals(goalsData);
+        setIsLoading(false);
+      }, (error) => {
+        console.error("Error loading goals:", error);
+        setIsLoading(false);
+      });
+
+      // ניקוי ה-listener כשהקומפוננטה מתפרקת
+      return () => unsubscribe();
+    } catch (error) {
+      console.error('Error loading world and goals:', error);
+      setError('אירעה שגיאה בטעינת הנתונים');
       setIsLoading(false);
     }
   }, [user, worldId]);
@@ -53,44 +64,23 @@ export default function WorldGoals() {
     loadWorldAndGoals();
   }, [loadWorldAndGoals]);
 
-  const addGoal = async () => {
-    if (!user || !newGoalTitle.trim()) return;
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500" />
+      </div>
+    );
+  }
 
-    try {
-      const goalsRef = collection(db, `users/${user.id}/worlds/${worldId}/goals`);
-      const newGoal: Omit<Goal, 'id'> = {
-        worldId,
-        userId: user.id,
-        title: newGoalTitle.trim(),
-        description: newGoalDescription.trim(),
-        target: 0,
-        currentProgress: 0,
-        timeInvested: 0,
-        isCompleted: false,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-
-      await addDoc(goalsRef, newGoal);
-      await loadWorldAndGoals();
-      setNewGoalTitle('');
-      setNewGoalDescription('');
-      setShowAddGoal(false);
-    } catch (_err) {
-      setError('אירעה שגיאה בהוספת המטרה');
-    }
-  };
-
-  if (isLoading) return <div>Loading...</div>;
-  if (!world) return <div>World not found</div>;
+  if (!world) return <div>העולם לא נמצא</div>;
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-8 animate-fade-in max-w-4xl mx-auto px-4">
       {/* Hero Section */}
       <div className="text-center mb-12">
         <div className="bg-gradient-to-r from-primary-400/90 to-sunset-400/90 p-8 rounded-3xl shadow-lg">
           <h1 className="text-3xl md:text-4xl font-bold mb-3 text-[#31161699]">
-            {world?.name || 'טוען...'}
+            {world.name}
           </h1>
           <p className="text-[#321f1f99] text-lg">
             הגדר מטרות משמעותיות שיעזרו לך להתקדם בעולם זה
@@ -108,48 +98,27 @@ export default function WorldGoals() {
               <GoalCard 
                 key={goal.id}
                 worldId={worldId}
-                goal={goal} 
-                onUpdate={loadWorldAndGoals}
+                goal={goal}
               />
             ))}
           </div>
 
-          {/* טופס הוספת מטרה */}
+          {/* הוספת מטרה */}
           {showAddGoal ? (
             <div className="bg-white p-6 rounded-lg shadow-sm">
-              <input
-                type="text"
-                placeholder="שם המטרה"
-                value={newGoalTitle}
-                onChange={(e) => setNewGoalTitle(e.target.value)}
-                className="w-full p-2 mb-2 border rounded-md"
+              <AddGoalForm
+                worldId={worldId}
+                onComplete={() => {
+                  loadWorldAndGoals();
+                  setShowAddGoal(false);
+                }}
+                onCancel={() => setShowAddGoal(false)}
               />
-              <textarea
-                placeholder="תיאור המטרה"
-                value={newGoalDescription}
-                onChange={(e) => setNewGoalDescription(e.target.value)}
-                className="w-full p-2 mb-4 border rounded-md"
-                rows={3}
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={addGoal}
-                  className="px-4 py-2 bg-primary-500 text-white rounded-md hover:bg-primary-600"
-                >
-                  הוסף מטרה
-                </button>
-                <button
-                  onClick={() => setShowAddGoal(false)}
-                  className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-md"
-                >
-                  ביטול
-                </button>
-              </div>
             </div>
           ) : (
             <button
               onClick={() => setShowAddGoal(true)}
-              className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-primary-500 hover:text-primary-500"
+              className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-primary-500 hover:text-primary-500 transition-colors"
             >
               + הוסף מטרה חדשה
             </button>

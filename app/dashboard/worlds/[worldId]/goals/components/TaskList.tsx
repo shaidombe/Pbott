@@ -2,6 +2,10 @@
 import { useState } from 'react';
 import { Task } from '@/app/types';
 import AddTaskForm from './AddTaskForm';
+import { PencilIcon } from '@heroicons/react/24/outline';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '@/app/lib/firebase/config';
+import { useApp } from '@/app/lib/hooks/useApp';
 
 interface TaskListProps {
   worldId: string;
@@ -10,28 +14,65 @@ interface TaskListProps {
   onUpdate: () => Promise<void>;
 }
 
-const PRIORITY_STYLES = {
-  HIGH: {
-    icon: '🔥',
-    className: 'bg-red-50 text-red-700 border-red-200'
-  },
-  MEDIUM: {
-    icon: '⚡',
-    className: 'bg-yellow-50 text-yellow-700 border-yellow-200'
-  },
-  LOW: {
-    icon: '📝',
-    className: 'bg-green-50 text-green-700 border-green-200'
+// פונקציה להמרת דקות לפורמט קריא
+const formatDuration = (minutes: number) => {
+  if (minutes < 60) {
+    return `${minutes} דקות`;
+  } else {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (remainingMinutes === 0) {
+      return hours === 1 ? 'שעה' : `${hours} שעות`;
+    }
+    return `${hours} שעות ו-${remainingMinutes} דקות`;
   }
-} as const;
+};
+
+// פונקציה לפורמט תאריך ושעה
+const formatDateTime = (date: Date) => {
+  return date.toLocaleString('he-IL', {
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
 
 export default function TaskList({ worldId, goalId, tasks, onUpdate }: TaskListProps) {
+  const { user } = useApp();
   const [showAddTask, setShowAddTask] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  const handleStatusChange = async (task: Task) => {
+    if (!user) return;
+    
+    const taskRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${goalId}/tasks/${task.id}`);
+    const newStatus = task.status === 'COMPLETED' ? 'PENDING' : 'COMPLETED';
+    
+    try {
+      await updateDoc(taskRef, {
+        status: newStatus,
+        updatedAt: new Date().toISOString()
+      });
+      onUpdate();
+    } catch (error) {
+      console.error('Error updating task status:', error);
+    }
+  };
+
+  const completedTasks = tasks.filter(t => t.status === 'COMPLETED').length;
+  const totalTasks = tasks.length;
 
   return (
     <div className="mt-4 space-y-4">
       <div className="flex justify-between items-center">
-        <h4 className="font-medium text-gray-700">תתי-משימות</h4>
+        <div>
+          <h4 className="font-medium text-gray-700">תתי-משימות</h4>
+          <p className="text-sm text-gray-500">
+            {completedTasks} מתוך {totalTasks} הושלמו
+          </p>
+        </div>
         <button
           onClick={() => setShowAddTask(true)}
           className="text-primary-500 text-sm hover:underline"
@@ -47,59 +88,67 @@ export default function TaskList({ worldId, goalId, tasks, onUpdate }: TaskListP
             key={task.id}
             className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-1">
               <input
                 type="checkbox"
                 checked={task.status === 'COMPLETED'}
-                onChange={() => {/* נוסיף בהמשך */}}
+                onChange={() => handleStatusChange(task)}
                 className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
               />
-              <div>
-                <div className={task.status === 'COMPLETED' ? 'line-through text-gray-400' : ''}>
-                  {task.title}
+              <div className="flex-1">
+                <div className={`flex items-center justify-between ${task.status === 'COMPLETED' ? 'line-through text-gray-400' : ''}`}>
+                  <span>{task.title}</span>
+                  <button
+                    onClick={() => setEditingTask(task)}
+                    className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <PencilIcon className="w-4 h-4" />
+                  </button>
                 </div>
-                <div className="text-sm text-gray-500">
-                  {task.estimatedDuration} דקות
+                <div className="text-sm text-gray-500 mt-1 space-x-3 space-x-reverse">
+                  <span className="inline-flex items-center gap-1">
+                    <span>⏱️</span>
+                    {formatDuration(task.estimatedDuration)}
+                  </span>
+                  {task.deadline && (
+                    <span className="inline-flex items-center gap-1">
+                      <span>📅</span>
+                      {formatDateTime(new Date(task.deadline))}
+                    </span>
+                  )}
+                  <span className={`
+                    px-2 py-0.5 rounded-full text-xs
+                    ${getPriorityStyle(task.priority)}
+                  `}>
+                    {getPriorityIcon(task.priority)} {getPriorityLabel(task.priority)}
+                  </span>
                 </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`
-                px-3 py-1.5 rounded-full text-sm border
-                flex items-center gap-1.5
-                ${PRIORITY_STYLES[task.priority].className}
-              `}>
-                <span>{PRIORITY_STYLES[task.priority].icon}</span>
-                {getPriorityLabel(task.priority)}
-              </span>
             </div>
           </div>
         ))}
       </div>
 
-      {/* כפתור הוספת משימה */}
-      {!showAddTask && (
-        <button
-          onClick={() => setShowAddTask(true)}
-          className="w-full p-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-primary-500 hover:text-primary-500"
-        >
-          + הוסף תת-משימה
-        </button>
-      )}
-
-      {/* טופס הוספת משימה */}
-      {showAddTask && (
+      {/* מודאל הוספה/עריכה */}
+      {(showAddTask || editingTask) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-4">הוספת משימה חדשה</h3>
+            <h3 className="text-lg font-semibold mb-4">
+              {editingTask ? 'עריכת משימה' : 'הוספת משימה חדשה'}
+            </h3>
             <AddTaskForm
               worldId={worldId}
               goalId={goalId}
+              task={editingTask || undefined}
               onComplete={() => {
                 setShowAddTask(false);
+                setEditingTask(null);
                 onUpdate();
               }}
-              onCancel={() => setShowAddTask(false)}
+              onCancel={() => {
+                setShowAddTask(false);
+                setEditingTask(null);
+              }}
             />
           </div>
         </div>
@@ -108,13 +157,35 @@ export default function TaskList({ worldId, goalId, tasks, onUpdate }: TaskListP
   );
 }
 
+const getPriorityStyle = (priority: Task['priority']) => {
+  switch (priority) {
+    case 'HIGH':
+      return 'bg-red-50 text-red-700 border-red-200';
+    case 'MEDIUM':
+      return 'bg-yellow-50 text-yellow-700 border-yellow-200';
+    case 'LOW':
+      return 'bg-green-50 text-green-700 border-green-200';
+  }
+};
+
+const getPriorityIcon = (priority: Task['priority']) => {
+  switch (priority) {
+    case 'HIGH':
+      return '⚡';
+    case 'MEDIUM':
+      return '🎯';
+    case 'LOW':
+      return '📝';
+  }
+};
+
 const getPriorityLabel = (priority: Task['priority']) => {
   switch (priority) {
     case 'HIGH':
       return 'דחוף';
     case 'MEDIUM':
-      return 'חשוב מאוד';
+      return 'חשוב';
     case 'LOW':
-      return 'צריך לעשות';
+      return 'נחמד לעשות';
   }
 }; 
