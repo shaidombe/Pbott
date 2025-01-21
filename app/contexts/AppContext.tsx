@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect } from 'react';
-import { User, World, BigStone, DailyPlan } from '@/app/types';
+import { User, World, BigStone, DailyPlan, Goal } from '@/app/types';
 import { auth, db } from '@/app/lib/firebase/config';
 import { collection, query, where, onSnapshot, doc, getDoc, getDocs } from 'firebase/firestore';
 import { GoogleCalendarService } from '@/app/lib/services/googleCalendar';
@@ -10,12 +10,13 @@ import { onAuthStateChanged } from 'firebase/auth';
 interface AppContextType {
   user: User | null;
   worlds: World[];
+  goals: Goal[];
   currentWorld: World | null;
   bigStones: BigStone[];
   todaysPlan: DailyPlan | null;
   isLoading: boolean;
   googleCalendar: GoogleCalendarService | null;
-  setCurrentWorld: (world: World) => void;
+  setCurrentWorld: (world: World | null) => void;
   syncCalendar: () => Promise<void>;
   refreshWorlds: (worlds: World[]) => void;
 }
@@ -23,6 +24,7 @@ interface AppContextType {
 export const AppContext = createContext<AppContextType>({
   user: null,
   worlds: [],
+  goals: [],
   currentWorld: null,
   bigStones: [],
   todaysPlan: null,
@@ -150,6 +152,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider value={{
       user,
       worlds,
+      goals: [],
       currentWorld,
       bigStones,
       todaysPlan,

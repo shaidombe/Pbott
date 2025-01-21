@@ -59,20 +59,23 @@ export interface BigStone {
   updatedAt: Date;
 }
 
-export interface Goal {
+export type Goal = {
   id: string;
   worldId: string;
   userId: string;
   title: string;
   description: string;
-  target: number;        // יעד מספרי (למשל: 20 שיתופי פעולה)
-  currentProgress: number; // התקדמות נוכחית
-  timeInvested: number;  // זמן שהושקע בדקות
-  deadline?: Date;       // תאריך יעד
+  importance: 'MUST' | 'VERY_HIGH' | 'HIGH';
+  deadline: Date;
+  measurementType: 'TASKS' | 'NUMERIC';
+  target: number;
+  targetUnit: string;
+  currentProgress: number;
+  timeInvested: number;
   isCompleted: boolean;
   createdAt: Date;
   updatedAt: Date;
-}
+};
 
 export interface Task {
   id: string;
@@ -100,6 +103,7 @@ export interface DailyPlan {
   tasks: Task[];
   completed: boolean;
   reviewNotes?: string;
+  events: CalendarEvent[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -128,11 +132,15 @@ export const convertPriorityToGoogle = (priority: Task['priority']): GooglePrior
 
 export interface CalendarEvent {
   id: string;
-  calendarId: string;
-  title: string;
-  description?: string;
-  start: Date;
-  end: Date;
-  location?: string;
-  isAllDay: boolean;
+  summary: string | null;
+  start: {
+    dateTime: string;
+  };
+  end: {
+    dateTime: string;
+  };
+}
+
+export interface GoogleCalendarService {
+  getEvents: (timeMin: Date, timeMax: Date) => Promise<CalendarEvent[]>;
 } 
