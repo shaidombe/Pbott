@@ -1,9 +1,9 @@
 'use client';
 
-import { useApp } from '@/app/hooks/useApp';
+import { useApp } from '@/hooks/useApp';
 import { Goal, World } from '@/app/types';
 import { format, isPast, isWithinInterval, addDays } from 'date-fns';
-import { getWorldColor } from '@/app/lib/utils/worldUtils';
+import { getWorldColor } from '@/lib/utils/worldUtils';
 
 interface GoalWithWorld extends Goal {
   world: World;

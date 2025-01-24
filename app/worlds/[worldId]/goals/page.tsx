@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useApp } from '@/app/contexts/AppContext';
 import { doc, getDoc, collection, getDocs, query, onSnapshot, orderBy } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase/config';
+import { db } from '@/lib/firebase/config';
 import { World, Goal } from '@/app/types';
 import { useParams } from 'next/navigation';
 import GoalCard from './components/GoalCard';

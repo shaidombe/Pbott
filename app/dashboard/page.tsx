@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase/config';
+import { db } from '@/lib/firebase/config';
 import { useApp } from '@/app/contexts/AppContext';
 import { Goal, Task } from '@/app/types';
 import { format } from 'date-fns';

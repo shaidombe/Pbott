@@ -3,7 +3,7 @@
 import WorldTimeSettings from '@/app/components/worlds/WorldTimeSettings';
 import { useApp } from '@/app/contexts/AppContext';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase/config';
+import { db } from '@/lib/firebase/config';
 import { TimeSlot } from '@/app/types';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
@@ -46,7 +46,7 @@ function WorldPage() {
       {/* Navigation */}
       <div className="flex justify-end mb-6">
         <Link 
-          href={`/dashboard/worlds/${world.id}/goals`}
+          href={`/worlds/${world.id}/goals`}
           className="text-primary-500 hover:underline"
         >
           צפה במטרות →

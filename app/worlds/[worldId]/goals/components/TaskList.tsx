@@ -4,8 +4,8 @@ import { Task } from '@/app/types';
 import AddTaskForm from './AddTaskForm';
 import { PencilIcon } from '@heroicons/react/24/outline';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase/config';
-import { useApp } from '@/app/lib/hooks/useApp';
+import { db } from '@/lib/firebase/config';
+import { useApp } from '@/lib/hooks/useApp';
 
 interface TaskListProps {
   worldId: string;

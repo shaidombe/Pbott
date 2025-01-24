@@ -1,9 +1,9 @@
 'use client';
 
-import { useApp } from '@/app/hooks/useApp';
+import { useApp } from '@/hooks/useApp';
 import { Task, World, CalendarEvent } from '@/app/types';
 import { format, isSameDay, parseISO, startOfDay, endOfDay } from 'date-fns';
-import { getWorldColor } from '@/app/lib/utils/worldUtils';
+import { getWorldColor } from '@/lib/utils/worldUtils';
 import { useState, useEffect } from 'react';
 
 interface ScheduleItem {

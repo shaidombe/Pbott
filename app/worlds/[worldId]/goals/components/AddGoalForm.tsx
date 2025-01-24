@@ -1,9 +1,9 @@
 'use client';
 import { useState} from 'react';
 import { Goal } from '@/app/types';
-import { useApp } from '@/app/lib/hooks/useApp';
+import { useApp } from '@/lib/hooks/useApp';
 import { addDoc, collection, doc, updateDoc } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase/config';
+import { db } from '@/lib/firebase/config';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 

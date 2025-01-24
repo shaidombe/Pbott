@@ -1,6 +1,6 @@
 'use client';
 
-import { useApp } from '@/app/hooks/useApp';
+import { useApp } from '@/hooks/useApp';
 import { World } from '@/app/types';
 import { format, differenceInDays } from 'date-fns';
 

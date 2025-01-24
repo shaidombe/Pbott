@@ -1,8 +1,8 @@
 'use client';
 
-import { useApp } from '@/app/hooks/useApp';
+import { useApp } from '@/hooks/useApp';
 import { World, Goal } from '@/app/types';
-import { getWorldColor } from '@/app/lib/utils/worldUtils';
+import { getWorldColor } from '@/lib/utils/worldUtils';
 
 interface WorldProgress {
   world: World;

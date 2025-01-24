@@ -3,12 +3,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useApp } from '@/app/contexts/AppContext';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase/config';
+import { db } from '@/lib/firebase/config';
 import { World, WorldCategory, TimeSlot } from '@/app/types/index';
 import { useRouter } from 'next/navigation';
-import { getWorldName, getWorldDescription, getWorldIcon } from '@/app/lib/utils/worldUtils';
+import { getWorldName, getWorldDescription, getWorldIcon } from '@/lib/utils/worldUtils';
 import WorldTimeSettings from '@/app/components/worlds/WorldTimeSettings';
-import { formatTime } from '@/app/lib/utils/timeUtils';
+import { formatTime } from '@/lib/utils/timeUtils';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 import WorldsTimeDistribution from '@/app/components/worlds/WorldsTimeDistribution';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
@@ -168,7 +168,7 @@ export default function WorldsSetup() {
   };
 
   const navigateToGoals = (worldId: string) => {
-    router.push(`/dashboard/worlds/${worldId}/goals`);
+    router.push(`/worlds/${worldId}/goals`);
   };
 
   return (

@@ -2,8 +2,8 @@
 import { useApp } from '@/app/contexts/AppContext';
 import { useState, useEffect, useCallback } from 'react';
 import { doc, setDoc, collection, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '@/app/lib/firebase/config';
-import { GoogleCalendarService } from '@/app/lib/services/googleCalendar';
+import { db } from '@/lib/firebase/config';
+import { GoogleCalendarService } from '@/lib/services/googleCalendar';
 import { ConnectedCalendar, CalendarType } from '@/app/types';
 import { useSearchParams } from 'next/navigation';
 

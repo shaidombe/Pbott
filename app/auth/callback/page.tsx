@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db, auth } from '@/app/lib/firebase/config';
+import { db, auth } from '@/lib/firebase/config';
 
 export default function AuthCallback() {
   const router = useRouter();

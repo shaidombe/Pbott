@@ -2,9 +2,9 @@
 
 import { createContext, useContext, useState, useEffect } from 'react';
 import { User, World, BigStone, DailyPlan, Goal } from '@/app/types';
-import { auth, db } from '@/app/lib/firebase/config';
+import { auth, db } from '@/lib/firebase/config';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { GoogleCalendarService } from '@/app/lib/services/googleCalendar';
+import { GoogleCalendarService } from '@/lib/services/googleCalendar';
 import { onAuthStateChanged } from 'firebase/auth';
 
 interface AppContextType {

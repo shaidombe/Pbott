@@ -1,6 +1,6 @@
 'use client';
 
-import { auth } from '@/app/lib/firebase/config';
+import { auth } from '@/lib/firebase/config';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { useState } from 'react';
 import Image from 'next/image';

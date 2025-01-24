@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { World, WorldCategory } from '@/app/types';
-import { getWorldName, getWorldColor } from '@/app/lib/utils/worldUtils';
+import { getWorldName, getWorldColor } from '@/lib/utils/worldUtils';
 import { CheckCircleIcon } from '@heroicons/react/24/solid';
 
 interface Props {

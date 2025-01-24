@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { GoogleCalendarService } from '@/app/lib/services/googleCalendar';
+import { GoogleCalendarService } from '@/lib/services/googleCalendar';
 
 export default function CalendarCallback() {
   const router = useRouter();
