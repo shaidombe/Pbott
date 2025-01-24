@@ -4,7 +4,6 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/app/lib/firebase/config';
 import { useApp } from '@/app/contexts/AppContext';
 import { Goal, Task } from '@/app/types';
-import Link from 'next/link';
 import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
 import WorldsTimeDistribution from '@/app/components/dashboard/WorldsTimeDistribution';

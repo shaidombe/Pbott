@@ -1,10 +1,8 @@
 'use client';
 
 import { useApp } from '@/app/hooks/useApp';
-import { World, WorldCategory } from '@/app/types';
+import { World } from '@/app/types';
 import { getWorldColor } from '@/app/lib/utils/worldUtils';
-import { format } from 'date-fns';
-import { he } from 'date-fns/locale';
 
 interface Props {
   className?: string;

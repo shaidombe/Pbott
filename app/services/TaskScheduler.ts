@@ -1,5 +1,5 @@
 import { addDays, addMinutes, isWithinInterval } from 'date-fns';
-import { Task, World, CalendarEvent } from '@/app/types';
+import { Task, World, CalendarEvent, GoogleCalendarService } from '@/app/types';
 
 interface ScheduleWindow {
   start: Date;
@@ -15,6 +15,8 @@ interface ScheduleResult {
 }
 
 export class TaskScheduler {
+  constructor(private calendars: GoogleCalendarService[]) {}
+
   private getAvailableWindows(world: World, startDate: Date, daysToLook: number): ScheduleWindow[] {
     const windows: ScheduleWindow[] = [];
     const endDate = addDays(startDate, daysToLook);
@@ -47,16 +49,17 @@ export class TaskScheduler {
   ): boolean {
     const taskEnd = addMinutes(window.start, taskDuration);
     
-    // בדוק שהמשימה נכנסת בתוך החלון
     if (taskEnd > window.end) {
       return false;
     }
     
-    // בדוק התנגשות עם אירועים קיימים
     for (const event of existingEvents) {
+      const eventStart = new Date(event.start.dateTime);
+      const eventEnd = new Date(event.end.dateTime);
+      
       if (
-        isWithinInterval(window.start, { start: event.start, end: event.end }) ||
-        isWithinInterval(taskEnd, { start: event.start, end: event.end })
+        isWithinInterval(window.start, { start: eventStart, end: eventEnd }) ||
+        isWithinInterval(taskEnd, { start: eventStart, end: eventEnd })
       ) {
         return false;
       }
@@ -65,16 +68,24 @@ export class TaskScheduler {
     return true;
   }
 
+  async getAllEvents(startDate: Date, endDate: Date): Promise<CalendarEvent[]> {
+    const allEvents = await Promise.all(
+      this.calendars.map(cal => cal.getEvents(startDate, endDate))
+    );
+    return allEvents.flat();
+  }
+
   async findNextAvailableSlot(
     task: Task,
     world: World,
-    existingEvents: CalendarEvent[],
     startDate: Date = new Date(),
     daysToLook: number = 30
   ): Promise<ScheduleResult> {
+    const endDate = addDays(startDate, daysToLook);
+    const existingEvents = await this.getAllEvents(startDate, endDate);
     const windows = this.getAvailableWindows(world, startDate, daysToLook);
     
-    // חפש חלון פנוי בתוך הזמנים המועדפים
+    // חיפוש בתוך הזמנים המועדפים
     for (const window of windows) {
       if (this.isWindowAvailable(window, task.estimatedDuration, existingEvents)) {
         return {
@@ -85,24 +96,70 @@ export class TaskScheduler {
       }
     }
     
-    // אם לא נמצא זמן בתוך החלונות המועדפים ויש deadline
+    // אם יש deadline ולא נמצא זמן בשעות המועדפות
     if (task.deadline) {
-      // חפש כל חלון פנוי עד ה-deadline
-      const allDayWindows = this.getAllDayWindows(startDate, new Date(task.deadline));
-      
-      for (const window of allDayWindows) {
-        if (this.isWindowAvailable(window, task.estimatedDuration, existingEvents)) {
-          return {
-            success: true,
-            scheduledStart: window.start,
-            scheduledEnd: addMinutes(window.start, task.estimatedDuration),
-            isOutOfPreferredTime: true
-          };
-        }
-      }
+      const conflictingEvents = this.findConflictingEvents(
+        startDate,
+        new Date(task.deadline),
+        task.estimatedDuration,
+        existingEvents
+      );
+
+      return {
+        success: true,
+        scheduledStart: this.suggestAlternativeTime(startDate, new Date(task.deadline), task.estimatedDuration, existingEvents),
+        isOutOfPreferredTime: true,
+        conflictingEvents
+      };
     }
     
     return { success: false };
+  }
+
+  private findConflictingEvents(
+    start: Date,
+    end: Date,
+    duration: number,
+    events: CalendarEvent[]
+  ): CalendarEvent[] {
+    return events.filter(event => 
+      this.doesEventConflict(event, start, addMinutes(start, duration))
+    );
+  }
+
+  private doesEventConflict(event: CalendarEvent, start: Date, end: Date): boolean {
+    const eventStart = new Date(event.start.dateTime);
+    const eventEnd = new Date(event.end.dateTime);
+    
+    return (
+      isWithinInterval(start, { start: eventStart, end: eventEnd }) ||
+      isWithinInterval(end, { start: eventStart, end: eventEnd })
+    );
+  }
+
+  private suggestAlternativeTime(
+    start: Date,
+    end: Date,
+    duration: number,
+    events: CalendarEvent[]
+  ): Date {
+    // מציאת החלון הפנוי הראשון
+    let currentTime = start;
+    while (currentTime < end) {
+      const isConflict = events.some(event => 
+        this.doesEventConflict(event, currentTime, addMinutes(currentTime, duration))
+      );
+      
+      if (!isConflict) {
+        return currentTime;
+      }
+      
+      // נסה את החלון הבא
+      currentTime = addMinutes(currentTime, 30);
+    }
+    
+    // אם לא נמצא זמן פנוי, החזר את זמן ההתחלה המקורי
+    return start;
   }
 
   private getAllDayWindows(startDate: Date, endDate: Date): ScheduleWindow[] {

@@ -1,9 +1,8 @@
 'use client';
 
 import { useApp } from '@/app/hooks/useApp';
-import { World, Goal } from '@/app/types';
-import { format, differenceInDays, isToday } from 'date-fns';
-import { he } from 'date-fns/locale';
+import { World } from '@/app/types';
+import { format, differenceInDays } from 'date-fns';
 
 interface Alert {
   id: string;

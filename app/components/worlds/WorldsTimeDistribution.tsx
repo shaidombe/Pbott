@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { World, TimeSlot, WorldCategory } from '@/app/types';
+import { World, WorldCategory } from '@/app/types';
 import { getWorldName, getWorldColor } from '@/app/lib/utils/worldUtils';
 import { CheckCircleIcon } from '@heroicons/react/24/solid';
 
@@ -194,7 +194,7 @@ export default function WorldsTimeDistribution({ worlds }: Props) {
                 onMouseEnter={(_, index) => setActiveIndex(index)}
                 onMouseLeave={() => setActiveIndex(undefined)}
               >
-                {timeDistribution.map((entry, index) => (
+                {timeDistribution.map((entry) => (
                   <Cell
                     key={entry.name}
                     fill={getWorldColor(entry.category)}

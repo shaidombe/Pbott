@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { User, World, BigStone, DailyPlan, Goal } from '@/app/types';
 import { auth, db } from '@/app/lib/firebase/config';
-import { collection, query, where, onSnapshot, doc, getDoc, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { GoogleCalendarService } from '@/app/lib/services/googleCalendar';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -45,8 +45,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [googleCalendar, setGoogleCalendar] = useState<GoogleCalendarService | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
+  // Check if we're in build time
+  const isBuildTime = process.env.NODE_ENV === 'production' && typeof window === 'undefined';
+
   useEffect(() => {
-    console.log('AppContext: Setting up auth listener');
+    // Skip auth check during build time
+    if (isBuildTime) return;
+    
+    console.log('AppContext: Waiting for auth to be ready');
     let worldsUnsubscribe: (() => void) | undefined;
 
     const authUnsubscribe = onAuthStateChanged(auth, (firebaseUser) => {

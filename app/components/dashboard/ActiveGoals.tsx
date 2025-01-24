@@ -3,7 +3,6 @@
 import { useApp } from '@/app/hooks/useApp';
 import { Goal, World } from '@/app/types';
 import { format, isPast, isWithinInterval, addDays } from 'date-fns';
-import { he } from 'date-fns/locale';
 import { getWorldColor } from '@/app/lib/utils/worldUtils';
 
 interface GoalWithWorld extends Goal {

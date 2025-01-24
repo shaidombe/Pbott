@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState} from 'react';
 import { Goal } from '@/app/types';
 import { useApp } from '@/app/lib/hooks/useApp';
 import { addDoc, collection, doc, updateDoc } from 'firebase/firestore';

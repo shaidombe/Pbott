@@ -98,13 +98,6 @@ export default function GoalCard({ worldId, goal, onUpdate }: GoalCardProps) {
     setIsCompleted(completed);
   }, [goal.currentProgress, goal.target, isCompleted]);
 
-  const completedTasks = tasks.filter(t => t.status === 'COMPLETED').length;
-  const totalTasks = tasks.length;
-
-  // חישוב אחוז ההתקדמות
-  const progressPercentage = goal.target > 0 
-    ? Math.min(100, (goal.currentProgress / goal.target) * 100)
-    : 0;
 
   // חישוב זמן בפורמט קריא
   const formatTime = (minutes: number) => {
