@@ -19,11 +19,12 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
-          access_type: 'offline',
-          prompt: 'consent',
-        },
-      },
+          prompt: "consent",
+          access_type: "offline",
+          response_type: "code",
+          scope: "openid email profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events"
+        }
+      }
     }),
   ],
   adapter: FirestoreAdapter({
@@ -34,11 +35,18 @@ export const authOptions: NextAuthOptions = {
     }),
   }),
   callbacks: {
-    async session({ session, user }: { session: Session; user: any }) {
+    async signIn({ account }) {
+      if (account?.access_token) {
+        return true;
+      }
+      return false;
+    },
+    async session({ session, user, token }) {
       if (session.user) {
         session.user.id = user.id;
       }
       return session;
     },
   },
+  debug: process.env.NODE_ENV === 'development',
 }; 

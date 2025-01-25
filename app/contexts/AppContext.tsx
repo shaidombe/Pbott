@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   User, 
   World, 
@@ -13,7 +13,7 @@ import {
 } from '@/app/types';
 import { auth, db } from '@/lib/firebase/config';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
-import { GoogleCalendarService as GoogleCalendarServiceImpl } from '@/lib/services/googleCalendar';
+import { GoogleCalendarService as GoogleCalendarServiceImpl } from '@/app/services/googleCalendar';
 import { onAuthStateChanged } from 'firebase/auth';
 
 export interface AppContextType {
@@ -57,9 +57,10 @@ export const AppContext = createContext<AppContextType>({
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [worlds, setWorlds] = useState<World[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [currentWorld, setCurrentWorld] = useState<World | null>(null);
-  const [bigStones] = useState<BigStone[]>([]);
-  const [todaysPlan] = useState<DailyPlan | null>(null);
+  const [bigStones, setBigStones] = useState<BigStone[]>([]);
+  const [todaysPlan, setTodaysPlan] = useState<DailyPlan | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [googleCalendar, setGoogleCalendar] = useState<GoogleCalendarServiceImpl | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -143,22 +144,91 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // עדכון סטטוס חיבור היומן
+  const updateGoogleCalendarStatus = async (isConnected: boolean) => {
+    if (!user) return;
+    
+    // בדיקה אם הסטטוס באמת השתנה
+    if (user.googleCalendarConnected === isConnected) {
+      console.log('Calendar status already matches requested state:', isConnected);
+      return;
+    }
+
+    console.log('Updating Google Calendar status:', {
+      userId: user.id,
+      isConnected,
+      currentStatus: user.googleCalendarConnected
+    });
+
+    try {
+      await updateDoc(doc(db, 'users', user.id), {
+        googleCalendarConnected: isConnected,
+        updatedAt: new Date()
+      });
+      console.log('Google Calendar status updated successfully');
+    } catch (error) {
+      console.error('Error updating Google Calendar status:', error);
+    }
+  };
+
+  // האזנה לשינויים ביומנים המחוברים
   useEffect(() => {
     if (!user?.id) return;
     
+    console.log('Setting up calendars listener for user:', user.id);
+    
     const unsubscribe = onSnapshot(
       collection(db, 'users', user.id, 'connectedCalendars'),
-      (snapshot) => {
+      async (snapshot) => {
         const calendars = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
           updatedAt: doc.data().updatedAt?.toDate()
         })) as ConnectedCalendar[];
+        
+        console.log('Connected calendars updated:', { 
+          count: calendars.length,
+          calendars: calendars.map(c => ({ id: c.id, name: c.name, isActive: c.isActive }))
+        });
+        
         setConnectedCalendars(calendars);
+
+        // עדכון סטטוס החיבור רק אם יש שינוי אמיתי
+        const shouldBeConnected = calendars.length > 0;
+        if (shouldBeConnected !== user.googleCalendarConnected) {
+          console.log('Updating connection status:', { shouldBeConnected });
+          await updateDoc(doc(db, 'users', user.id), {
+            googleCalendarConnected: shouldBeConnected,
+            updatedAt: new Date()
+          });
+          // עדכון מיידי של מצב המשתמש במקום
+          setUser(prevUser => prevUser ? {
+            ...prevUser,
+            googleCalendarConnected: shouldBeConnected
+          } : null);
+        }
       }
     );
 
-    return () => unsubscribe();
+    // האזנה לשינויים במסמך המשתמש
+    const userUnsubscribe = onSnapshot(
+      doc(db, 'users', user.id),
+      (doc) => {
+        const userData = doc.data();
+        if (userData) {
+          setUser(prevUser => prevUser ? {
+            ...prevUser,
+            ...userData,
+            googleCalendarConnected: userData.googleCalendarConnected ?? false
+          } : null);
+        }
+      }
+    );
+
+    return () => {
+      unsubscribe();
+      userUnsubscribe();
+    };
   }, [user?.id]);
 
   const syncCalendar = async () => {
@@ -185,27 +255,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       count: newWorlds.length 
     });
     // לא צריך לעשות כלום כי ה-snapshot יתפוס את השינויים
-  };
-
-  const updateGoogleCalendarStatus = async (isConnected: boolean) => {
-    if (!user) return;
-    
-    try {
-      const userRef = doc(db, 'users', user.id);
-      await updateDoc(userRef, {
-        googleCalendarConnected: isConnected,
-        updatedAt: new Date()
-      });
-      
-      setUser(prev => prev ? {
-        ...prev,
-        googleCalendarConnected: isConnected,
-        updatedAt: new Date()
-      } : null);
-      
-    } catch (error) {
-      console.error('Error updating calendar status:', error);
-    }
   };
 
   const googleCalendarApi: GoogleCalendarService = {
@@ -247,7 +296,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider value={{
       user,
       worlds,
-      goals: [],
+      goals,
       currentWorld,
       bigStones,
       todaysPlan,

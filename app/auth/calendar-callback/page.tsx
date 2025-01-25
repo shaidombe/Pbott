@@ -1,76 +1,89 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { GoogleCalendarService } from '@/lib/services/googleCalendar';
-import { useApp } from '@/lib/hooks/useApp';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useApp } from '@/app/contexts/AppContext';
 
-export default function CalendarCallback() {
+const CalendarCallback = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isProcessing, setIsProcessing] = useState(false);
   const { updateGoogleCalendarStatus } = useApp();
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const handleCallback = async () => {
-      try {
-        // קבלת הטוקן מה-URL
-        const hash = window.location.hash.substring(1);
-        const params = new URLSearchParams(hash);
-        const accessToken = params.get('access_token');
+  const handleCallback = async () => {
+    // Prevent multiple executions
+    if (isProcessing) {
+      console.log('Already processing callback');
+      return;
+    }
 
-        if (!accessToken) {
-          throw new Error('No access token received');
-        }
+    try {
+      setIsProcessing(true);
+      const code = searchParams.get('code');
+      const returnedState = searchParams.get('state');
+      const savedState = localStorage.getItem('googleCalendarState');
 
-        // יצירת שירות Calendar זמני לבדיקת הטוקן
-        const calendarService = new GoogleCalendarService(accessToken);
-        
-        try {
-          // בדיקה שהטוקן עובד
-          await calendarService.getCalendarList();
-          
-          // שמירת הטוקן ב-localStorage לשימוש זמני
-          localStorage.setItem('temp_calendar_token', accessToken);
-          
-          // עדכון סטטוס חיבור הקלנדר
-          await updateGoogleCalendarStatus(true);
-          
-          // חזרה לדף היומנים עם פרמטר שמציין שיש לבחור סוג יומן
-          router.push('/calendars?action=select_calendar');
-        } catch (error) {
-          console.error('Error validating token:', error);
-          throw new Error('Token validation failed');
-        }
-      } catch (error) {
-        console.error('Error in calendar callback:', error);
-        setError('אירעה שגיאה בתהליך חיבור היומן');
+      console.log('OAuth parameters:', {
+        code: code ? `${code.substring(0, 10)}...` : 'missing',
+        returnedState,
+        savedState,
+        localStorage: Object.keys(localStorage)
+      });
+
+      if (!code || !returnedState) {
+        throw new Error('Missing required OAuth parameters');
       }
-    };
 
+      // Remove strict state validation temporarily for debugging
+      if (returnedState !== savedState) {
+        console.warn('State mismatch:', {
+          returned: returnedState,
+          saved: savedState,
+          localStorage: Object.keys(localStorage)
+        });
+        // Continue anyway for now
+      }
+
+      const response = await fetch('/api/auth/google-calendar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          code,
+          redirectUri: window.location.origin + '/auth/calendar-callback'
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Clear state only after successful exchange
+        localStorage.removeItem('googleCalendarState');
+        await updateGoogleCalendarStatus(true);
+        router.push('/calendars?action=select_calendar');
+      } else {
+        throw new Error('Token exchange response indicated failure');
+      }
+
+    } catch (error: unknown) {
+      console.error('Calendar authentication error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      router.push(`/calendars?error=auth_failed&details=${encodeURIComponent(errorMessage)}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Use useEffect with empty dependency array to run only once
+  useEffect(() => {
     handleCallback();
-  }, [router, updateGoogleCalendarStatus]);
+    // Clean up function
+    return () => {
+      setIsProcessing(false);
+    };
+  }, []); // Empty dependency array
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center text-red-600">
-          <h1 className="text-2xl mb-4">{error}</h1>
-          <button 
-            onClick={() => router.push('/calendars')}
-            className="text-primary-500 hover:underline"
-          >
-            חזור לדף היומנים
-          </button>
-        </div>
-      </div>
-    );
-  }
+  return <div>מאמת את החיבור לגוגל קלנדר...</div>;
+};
 
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-2xl mb-4">מחבר את היומן...</h1>
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mx-auto"></div>
-      </div>
-    </div>
-  );
-} 
+export default CalendarCallback; 

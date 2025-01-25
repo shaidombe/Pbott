@@ -10,7 +10,9 @@ import {
   addMonths, 
   subMonths,
   startOfMonth,
-  endOfMonth 
+  endOfMonth,
+  startOfDay,
+  endOfDay
 } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { CalendarEvent } from '@/app/types';
@@ -18,17 +20,21 @@ import CalendarView from './components/CalendarView';
 import Link from 'next/link';
 import { Cog6ToothIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import Sidebar from './components/Sidebar';
+import { useRouter } from 'next/navigation';
 
 type ViewType = 'day' | 'week' | 'month';
 
 export default function EventsCalendar() {
-  const { user, connectedCalendars } = useApp();
+  const { user, connectedCalendars, updateGoogleCalendarStatus } = useApp();
   const [view, setView] = useState<ViewType>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
+  const authErrorHandled = useRef(false);
+  const router = useRouter();
 
   // פונקציה לגלילה לשעה הנוכחית
   const scrollToCurrentTime = useCallback(() => {
@@ -45,37 +51,141 @@ export default function EventsCalendar() {
   // פטצ' אירועים מכל היומנים המחוברים והפעילים
   useEffect(() => {
     const fetchEvents = async () => {
-      if (!user?.googleCalendarConnected) return;
+      if (!user) {
+        console.log('No user found');
+        return;
+      }
+
+      if (!user.googleCalendarConnected) {
+        console.log('User not connected to Google Calendar');
+        setError('נדרש חיבור מחדש ליומן גוגל');
+        return;
+      }
+
+      if (authErrorHandled.current) {
+        console.log('Auth error already handled, skipping fetch');
+        return;
+      }
+
       setIsLoading(true);
+      setError(null);
 
       try {
         const activeCalendars = connectedCalendars.filter(cal => cal.isActive);
+        console.log('Active calendars for fetching:', activeCalendars);
+
+        if (activeCalendars.length === 0) {
+          console.log('No active calendars found');
+          setEvents([]);
+          setError('לא נבחרו יומנים להצגה');
+          return;
+        }
+
+        // קביעת טווח התאריכים לפי סוג התצוגה
+        let startTime: Date, endTime: Date;
+        switch (view) {
+          case 'day':
+            startTime = startOfDay(currentDate);
+            endTime = endOfDay(currentDate);
+            break;
+          case 'week':
+            startTime = startOfWeek(currentDate, { locale: he });
+            endTime = endOfWeek(currentDate, { locale: he });
+            break;
+          case 'month':
+            startTime = startOfMonth(currentDate);
+            endTime = endOfMonth(currentDate);
+            break;
+        }
+
+        console.log('Fetching events for time range:', { startTime, endTime, view });
+
         const allEvents: CalendarEvent[] = [];
+        let hasAuthError = false;
+
+        // Add reconnection button when error occurs
+        const handleReconnect = () => {
+          router.push('/calendars?action=reconnect');
+        };
 
         for (const calendar of activeCalendars) {
-          const response = await fetch(`/api/calendar/events?calendarId=${calendar.id}`);
-          if (!response.ok) throw new Error('Failed to fetch events');
-          const calendarEvents = await response.json();
-          
-          // הוספת צבע היומן לכל האירועים שלו
-          const eventsWithColor = calendarEvents.map((event: CalendarEvent) => ({
-            ...event,
-            backgroundColor: calendar.color
-          }));
-          
-          allEvents.push(...eventsWithColor);
+          try {
+            console.log(`Fetching events for calendar: ${calendar.id} (${calendar.name})`);
+            const response = await fetch(
+              `/api/calendar/events?` +
+              `calendarId=${encodeURIComponent(calendar.id)}` +
+              `&timeMin=${startTime.toISOString()}` +
+              `&timeMax=${endTime.toISOString()}`
+            );
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ error: response.statusText }));
+              console.log('Raw error response:', JSON.stringify(errorData));
+              console.log('Parsed error data:', errorData);
+
+              if (response.status === 401 || 
+                  (typeof errorData.error === 'string' && errorData.error.includes('auth'))) {
+                console.log('Auth error detected, updating calendar status');
+                authErrorHandled.current = true;
+                await updateGoogleCalendarStatus(false);
+                setError('נדרש חיבור מחדש ליומן גוגל');
+                return;
+              }
+
+              console.error(`HTTP error for calendar ${calendar.id}:`, {
+                status: response.status,
+                statusText: response.statusText,
+                error: errorData,
+                url: response.url,
+                headers: Object.fromEntries(response.headers.entries())
+              });
+              continue;
+            }
+
+            const data = await response.json();
+            if (data.items) {
+              const eventsWithColor = data.items.map((event: any) => ({
+                ...event,
+                backgroundColor: calendar.color,
+                calendarId: calendar.id,
+                calendarName: calendar.name
+              }));
+              
+              allEvents.push(...eventsWithColor);
+            }
+          } catch (error) {
+            console.error(`Error fetching events for calendar ${calendar.id}:`, error);
+            if (error instanceof Error) {
+              setError(`שגיאה בטעינת יומן ${calendar.name}: ${error.message}`);
+            }
+          }
+        }
+
+        if (hasAuthError) {
+          console.log('Auth error detected, updating calendar status');
+          authErrorHandled.current = true;
+          await updateGoogleCalendarStatus(false);
+          setError('נדרש חיבור מחדש ליומן גוגל');
+          return;
         }
 
         setEvents(allEvents);
       } catch (error) {
-        console.error('Error fetching events:', error);
+        console.error('Error in fetchEvents:', error);
+        setError('אירעה שגיאה בטעינת האירועים');
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchEvents();
-  }, [user, connectedCalendars]);
+    if (user && connectedCalendars.length > 0) {
+      fetchEvents();
+    }
+
+    return () => {
+      authErrorHandled.current = false;
+    };
+  }, [user, connectedCalendars, currentDate, view, updateGoogleCalendarStatus, router]);
 
   // גלילה לשעה הנוכחית בטעינה ראשונית ובמעבר בין תצוגות
   useEffect(() => {
@@ -196,16 +306,36 @@ export default function EventsCalendar() {
               <ChevronLeftIcon className="w-5 h-5" />
             </button>
           </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg mt-2 flex justify-between items-center">
+              <span>{error}</span>
+              {typeof error === 'string' && error.includes('חיבור מחדש') && (
+                <Link 
+                  href="/calendars"
+                  className="text-red-700 hover:text-red-800 underline text-sm"
+                >
+                  התחבר מחדש
+                </Link>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Calendar */}
-        <div ref={calendarRef} className="flex-1 overflow-y-auto">
-          <CalendarView
-            view={view}
-            currentDate={currentDate}
-            events={events}
-            renderTimeIndicator={renderTimeIndicator}
-          />
+        <div ref={calendarRef} className="flex-1 overflow-y-auto relative">
+          {isLoading ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+            </div>
+          ) : (
+            <CalendarView
+              view={view}
+              currentDate={currentDate}
+              events={events}
+              renderTimeIndicator={renderTimeIndicator}
+            />
+          )}
         </div>
       </div>
     </div>

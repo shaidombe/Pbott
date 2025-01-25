@@ -3,9 +3,9 @@ import { useApp } from '@/app/contexts/AppContext';
 import { useState, useEffect, useCallback } from 'react';
 import { doc, setDoc, collection, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import { GoogleCalendarService } from '@/lib/services/googleCalendar';
+import { GoogleCalendarService } from '@/app/services/googleCalendar';
 import { ConnectedCalendar, CalendarType } from '@/app/types';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 interface GoogleCalendar {
   id: string;
@@ -15,6 +15,7 @@ interface GoogleCalendar {
 
 export default function CalendarSetup() {
   const { user, updateGoogleCalendarStatus } = useApp();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [showCalendarTypeDialog, setShowCalendarTypeDialog] = useState(false);
   const [availableCalendars, setAvailableCalendars] = useState<GoogleCalendar[]>([]);
@@ -36,19 +37,12 @@ export default function CalendarSetup() {
         ...doc.data()
       })) as ConnectedCalendar[];
       setConnectedCalendars(calendarsData);
-      
-      // עדכון סטטוס החיבור בהתאם לקיום יומנים
-      if (calendarsData.length > 0 && !user.googleCalendarConnected) {
-        await updateGoogleCalendarStatus(true);
-      } else if (calendarsData.length === 0 && user.googleCalendarConnected) {
-        await updateGoogleCalendarStatus(false);
-      }
     } catch (error: unknown) {
       console.error('Error loading calendars:', error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setIsLoading(false);
     }
-  }, [user, updateGoogleCalendarStatus]);
+  }, [user]);
 
   useEffect(() => {
     loadConnectedCalendars();
@@ -62,6 +56,36 @@ export default function CalendarSetup() {
       }
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    // Handle reconnection flow
+    if (searchParams.get('action') === 'reconnect') {
+      const initiateGoogleAuth = async () => {
+        try {
+          // Clear any existing tokens
+          localStorage.removeItem('temp_calendar_token');
+          
+          const response = await fetch('/api/auth/google-calendar/auth-url');
+          if (!response.ok) {
+            throw new Error('Failed to get auth URL');
+          }
+          
+          const { url } = await response.json();
+          if (!url) {
+            throw new Error('No auth URL received');
+          }
+
+          console.log('Redirecting to Google auth:', url);
+          router.push(url);
+        } catch (error) {
+          console.error('Failed to initiate Google auth:', error);
+          setError('אירעה שגיאה בהתחברות ליומן גוגל');
+        }
+      };
+      
+      initiateGoogleAuth();
+    }
+  }, [searchParams, router]);
 
   const toggleCalendarActive = async (calendar: ConnectedCalendar) => {
     if (!user) return;
@@ -109,28 +133,43 @@ export default function CalendarSetup() {
 
   const connectNewCalendar = async () => {
     try {
+      // אם יש חיבור אבל אין יומנים, נאפס את הסטטוס
+      if (user?.googleCalendarConnected && connectedCalendars.length === 0) {
+        await updateGoogleCalendarStatus(false);
+      }
+
       const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
       if (!clientId) throw new Error('Google Client ID is not configured');
 
       const redirectUri = `${window.location.origin}/auth/calendar-callback`;
       
       const scopes = [
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/calendar.events',
+        'https://www.googleapis.com/auth/calendar.events.readonly',
         'https://www.googleapis.com/auth/calendar.readonly',
-        'https://www.googleapis.com/auth/calendar.events'
+        'https://www.googleapis.com/auth/calendar.settings.readonly'
       ];
+      
+      const state = crypto.randomUUID();
+      localStorage.setItem('googleCalendarState', state);
       
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       authUrl.searchParams.append('client_id', clientId);
       authUrl.searchParams.append('redirect_uri', redirectUri);
-      authUrl.searchParams.append('response_type', 'token');
+      authUrl.searchParams.append('response_type', 'code');
       authUrl.searchParams.append('scope', scopes.join(' '));
       authUrl.searchParams.append('include_granted_scopes', 'true');
-      authUrl.searchParams.append('prompt', 'consent select_account');
-      
+      authUrl.searchParams.append('access_type', 'offline');
+      authUrl.searchParams.append('prompt', 'consent');
+      authUrl.searchParams.append('state', state);
+
+      // במקום לפתוח חלון חדש, נעשה redirect ישיר
       window.location.href = authUrl.toString();
+
     } catch (error) {
-      setError('אירעה שגיאה בניסיון לחבר יומן חדש');
-      console.error(error);
+      console.error('Error connecting calendar:', error);
+      setError(error instanceof Error ? error.message : 'אירעה שגיאה בניסיון לחבר יומן חדש');
     }
   };
 
@@ -218,6 +257,8 @@ export default function CalendarSetup() {
     }
   };
 
+  const isEffectivelyConnected = user?.googleCalendarConnected && connectedCalendars.length > 0;
+
   if (isLoading) {
     return <div className="flex justify-center items-center min-h-[200px]">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
@@ -233,14 +274,14 @@ export default function CalendarSetup() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className={`w-3 h-3 rounded-full ${
-              user?.googleCalendarConnected ? 'bg-green-500' : 'bg-yellow-500'
+              isEffectivelyConnected ? 'bg-green-500' : 'bg-yellow-500'
             }`} />
             <div>
               <h2 className="font-semibold">סטטוס חיבור ליומן גוגל</h2>
               <p className={`text-sm ${
-                user?.googleCalendarConnected ? 'text-green-700' : 'text-yellow-700'
+                isEffectivelyConnected ? 'text-green-700' : 'text-yellow-700'
               }`}>
-                {user?.googleCalendarConnected 
+                {isEffectivelyConnected 
                   ? 'מחובר לגוגל קלנדר' 
                   : 'לא מחובר לגוגל קלנדר'}
               </p>
@@ -250,12 +291,12 @@ export default function CalendarSetup() {
           <button
             onClick={connectNewCalendar}
             className={`px-4 py-2 rounded-lg transition-colors ${
-              user?.googleCalendarConnected
+              isEffectivelyConnected
                 ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                 : 'bg-primary-500 text-white hover:bg-primary-600'
             }`}
           >
-            {user?.googleCalendarConnected 
+            {isEffectivelyConnected 
               ? 'חבר יומן נוסף'
               : 'חבר יומן Google'}
           </button>

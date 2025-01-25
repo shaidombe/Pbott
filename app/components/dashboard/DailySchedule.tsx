@@ -24,6 +24,7 @@ export default function DailySchedule() {
   useEffect(() => {
     const fetchEvents = async () => {
       if (!googleCalendar) {
+        console.log('No googleCalendar service available');
         setCalendarEvents([]);
         return;
       }
@@ -31,7 +32,11 @@ export default function DailySchedule() {
       try {
         const todayStart = startOfDay(today);
         const todayEnd = endOfDay(today);
+        console.log('Fetching events for range:', { todayStart, todayEnd });
+        
         const response = await googleCalendar.getEvents(todayStart, todayEnd);
+        console.log('Calendar events response:', response);
+        
         setCalendarEvents(response.items);
       } catch (error) {
         console.error('Error fetching events:', error);
