@@ -10,38 +10,20 @@ const CalendarCallback = () => {
   const { updateGoogleCalendarStatus } = useApp();
 
   const handleCallback = async () => {
-    // Prevent multiple executions
-    if (isProcessing) {
-      console.log('Already processing callback');
-      return;
-    }
-
     try {
       setIsProcessing(true);
       const code = searchParams.get('code');
       const returnedState = searchParams.get('state');
       const savedState = localStorage.getItem('googleCalendarState');
 
-      console.log('OAuth parameters:', {
-        code: code ? `${code.substring(0, 10)}...` : 'missing',
-        returnedState,
-        savedState,
-        localStorage: Object.keys(localStorage)
-      });
-
       if (!code || !returnedState) {
         throw new Error('Missing required OAuth parameters');
       }
 
-      // Remove strict state validation temporarily for debugging
-      if (returnedState !== savedState) {
-        console.warn('State mismatch:', {
-          returned: returnedState,
-          saved: savedState,
-          localStorage: Object.keys(localStorage)
-        });
-        // Continue anyway for now
-      }
+      console.log('Sending token exchange request with:', {
+        code: code.substring(0, 10) + '...',
+        redirectUri: window.location.origin + '/auth/calendar-callback'
+      });
 
       const response = await fetch('/api/auth/google-calendar', {
         method: 'POST',
@@ -56,14 +38,29 @@ const CalendarCallback = () => {
 
       const data = await response.json();
       
-      if (data.success) {
-        // Clear state only after successful exchange
-        localStorage.removeItem('googleCalendarState');
-        await updateGoogleCalendarStatus(true);
-        router.push('/calendars?action=select_calendar');
-      } else {
-        throw new Error('Token exchange response indicated failure');
+      console.log('Token exchange response:', {
+        status: response.status,
+        ok: response.ok,
+        data: {
+          success: data.success,
+          hasError: !!data.error,
+          hasToken: !!data.token
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Token exchange failed: ${data.error || response.statusText}`);
       }
+
+      if (!data.token) {
+        throw new Error('No token received from server');
+      }
+
+      // שמירת הטוקן והמשך התהליך
+      localStorage.removeItem('googleCalendarState');
+      localStorage.setItem('temp_calendar_token', data.token);
+      await updateGoogleCalendarStatus(true);
+      router.push('/calendars?action=select_calendar');
 
     } catch (error: unknown) {
       console.error('Calendar authentication error:', error);

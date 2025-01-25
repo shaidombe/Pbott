@@ -4,12 +4,17 @@ import { NextResponse } from 'next/server';
 export async function POST(request: Request) {
   try {
     const { code, redirectUri } = await request.json();
-    console.log('Received code in API:', !!code);
-    console.log('Redirect URI:', redirectUri);
+
+    console.log('Token exchange request details:', {
+      hasCode: !!code,
+      hasRedirectUri: !!redirectUri,
+      clientId: !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+      clientSecret: !!process.env.GOOGLE_CLIENT_SECRET
+    });
 
     if (!code || !redirectUri) {
       return NextResponse.json(
-        { error: 'Authorization code and redirect URI are required' },
+        { error: 'Missing required parameters' },
         { status: 400 }
       );
     }
@@ -31,36 +36,37 @@ export async function POST(request: Request) {
 
     try {
       const { tokens } = await oauth2Client.getToken(code);
-      console.log('Got tokens from Google:', !!tokens);
+      
+      console.log('Got tokens from Google:', {
+        hasAccessToken: !!tokens.access_token,
+        hasRefreshToken: !!tokens.refresh_token,
+        expiryDate: tokens.expiry_date
+      });
 
       if (!tokens.access_token) {
         throw new Error('No access token received from Google');
       }
 
-      // Store tokens in the client credentials
-      oauth2Client.setCredentials(tokens);
-      
-      // Return success with the tokens
-      return NextResponse.json({ 
-        success: true,
-        tokens 
+      return NextResponse.json({
+        token: tokens.access_token,
+        success: true
       });
 
-    } catch (error: any) {
-      console.error('Google OAuth error:', error);
+    } catch (tokenError: any) {
+      console.error('Token exchange error:', tokenError);
       return NextResponse.json(
         { 
           error: 'Failed to exchange authorization code for tokens',
-          details: error.message 
+          details: tokenError.message 
         },
-        { status: 401 }
+        { status: 400 }
       );
     }
 
   } catch (error: any) {
-    console.error('Server error:', error);
+    console.error('General error in token exchange:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error.message },
       { status: 500 }
     );
   }
