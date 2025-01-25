@@ -1,13 +1,22 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect } from 'react';
-import { User, World, BigStone, DailyPlan, Goal } from '@/app/types';
+import { 
+  User, 
+  World, 
+  BigStone, 
+  DailyPlan, 
+  Goal, 
+  ConnectedCalendar, 
+  GoogleCalendarService,
+  GoogleCalendarResponse 
+} from '@/app/types';
 import { auth, db } from '@/lib/firebase/config';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { GoogleCalendarService } from '@/lib/services/googleCalendar';
+import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { GoogleCalendarService as GoogleCalendarServiceImpl } from '@/lib/services/googleCalendar';
 import { onAuthStateChanged } from 'firebase/auth';
 
-interface AppContextType {
+export interface AppContextType {
   user: User | null;
   worlds: World[];
   goals: Goal[];
@@ -15,11 +24,19 @@ interface AppContextType {
   bigStones: BigStone[];
   todaysPlan: DailyPlan | null;
   isLoading: boolean;
-  googleCalendar: GoogleCalendarService | null;
+  googleCalendar: GoogleCalendarService;
   setCurrentWorld: (world: World | null) => void;
   syncCalendar: () => Promise<void>;
   refreshWorlds: (worlds: World[]) => void;
+  updateGoogleCalendarStatus: (isConnected: boolean) => Promise<void>;
+  connectedCalendars: ConnectedCalendar[];
 }
+
+const defaultGoogleCalendar: GoogleCalendarService = {
+  connect: async () => {},
+  disconnect: async () => {},
+  getEvents: async () => ({ items: [] })  // החזרת אובייקט ריק כברירת מחדל
+};
 
 export const AppContext = createContext<AppContextType>({
   user: null,
@@ -29,10 +46,12 @@ export const AppContext = createContext<AppContextType>({
   bigStones: [],
   todaysPlan: null,
   isLoading: true,
-  googleCalendar: null,
+  googleCalendar: defaultGoogleCalendar,  // שימוש בערך ברירת המחדל
   setCurrentWorld: () => {},
   syncCalendar: async () => {},
-  refreshWorlds: () => {}
+  refreshWorlds: () => {},
+  updateGoogleCalendarStatus: async () => {},
+  connectedCalendars: []
 });
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -42,8 +61,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [bigStones] = useState<BigStone[]>([]);
   const [todaysPlan] = useState<DailyPlan | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [googleCalendar, setGoogleCalendar] = useState<GoogleCalendarService | null>(null);
+  const [googleCalendar, setGoogleCalendar] = useState<GoogleCalendarServiceImpl | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [connectedCalendars, setConnectedCalendars] = useState<ConnectedCalendar[]>([]);
 
   // Check if we're in build time
   const isBuildTime = process.env.NODE_ENV === 'production' && typeof window === 'undefined';
@@ -123,6 +143,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    const unsubscribe = onSnapshot(
+      collection(db, 'users', user.id, 'connectedCalendars'),
+      (snapshot) => {
+        const calendars = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          updatedAt: doc.data().updatedAt?.toDate()
+        })) as ConnectedCalendar[];
+        setConnectedCalendars(calendars);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user?.id]);
+
   const syncCalendar = async () => {
     if (!googleCalendar || !user) return;
 
@@ -149,6 +187,57 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // לא צריך לעשות כלום כי ה-snapshot יתפוס את השינויים
   };
 
+  const updateGoogleCalendarStatus = async (isConnected: boolean) => {
+    if (!user) return;
+    
+    try {
+      const userRef = doc(db, 'users', user.id);
+      await updateDoc(userRef, {
+        googleCalendarConnected: isConnected,
+        updatedAt: new Date()
+      });
+      
+      setUser(prev => prev ? {
+        ...prev,
+        googleCalendarConnected: isConnected,
+        updatedAt: new Date()
+      } : null);
+      
+    } catch (error) {
+      console.error('Error updating calendar status:', error);
+    }
+  };
+
+  const googleCalendarApi: GoogleCalendarService = {
+    connect: async () => {
+      // ... existing connect logic ...
+    },
+    disconnect: async () => {
+      // ... existing disconnect logic ...
+    },
+    getEvents: async (timeMin: Date, timeMax: Date): Promise<GoogleCalendarResponse> => {
+      if (!user) {
+        return { items: [] };
+      }
+      
+      try {
+        const response = await fetch(
+          `/api/calendar/events?timeMin=${timeMin.toISOString()}&timeMax=${timeMax.toISOString()}`
+        );
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch events');
+        }
+        
+        const data = await response.json();
+        return { items: data.items || [] };
+      } catch (error) {
+        console.error('Error fetching calendar events:', error);
+        return { items: [] };
+      }
+    }
+  };
+
   if (!isAuthReady) {
     console.log('AppContext: Waiting for auth to be ready');
     return <div>Loading...</div>;
@@ -163,10 +252,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       bigStones,
       todaysPlan,
       isLoading,
-      googleCalendar,
+      googleCalendar: googleCalendarApi,
       setCurrentWorld,
       syncCalendar,
-      refreshWorlds
+      refreshWorlds,
+      updateGoogleCalendarStatus,
+      connectedCalendars
     }}>
       {children}
     </AppContext.Provider>

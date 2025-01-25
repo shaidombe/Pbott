@@ -14,7 +14,7 @@ interface GoogleCalendar {
 }
 
 export default function CalendarSetup() {
-  const { user } = useApp();
+  const { user, updateGoogleCalendarStatus } = useApp();
   const searchParams = useSearchParams();
   const [showCalendarTypeDialog, setShowCalendarTypeDialog] = useState(false);
   const [availableCalendars, setAvailableCalendars] = useState<GoogleCalendar[]>([]);
@@ -36,12 +36,19 @@ export default function CalendarSetup() {
         ...doc.data()
       })) as ConnectedCalendar[];
       setConnectedCalendars(calendarsData);
+      
+      // עדכון סטטוס החיבור בהתאם לקיום יומנים
+      if (calendarsData.length > 0 && !user.googleCalendarConnected) {
+        await updateGoogleCalendarStatus(true);
+      } else if (calendarsData.length === 0 && user.googleCalendarConnected) {
+        await updateGoogleCalendarStatus(false);
+      }
     } catch (error: unknown) {
       console.error('Error loading calendars:', error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, updateGoogleCalendarStatus]);
 
   useEffect(() => {
     loadConnectedCalendars();
@@ -86,6 +93,12 @@ export default function CalendarSetup() {
       await deleteDoc(
         doc(db, 'users', user.id, 'connectedCalendars', calendar.id)
       );
+      
+      // בדיקה אם זה היומן האחרון
+      const remainingCalendars = connectedCalendars.filter(c => c.id !== calendar.id);
+      if (remainingCalendars.length === 0) {
+        await updateGoogleCalendarStatus(false);
+      }
       
       await loadConnectedCalendars();
     } catch (error) {
@@ -212,97 +225,61 @@ export default function CalendarSetup() {
   }
 
   return (
-    <div className="space-y-8">
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-lg">
-          {error}
-        </div>
-      )}
+    <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <h1 className="text-2xl font-bold mb-8">הגדרות יומן</h1>
 
-      {/* יומן ראשי */}
-      <section className="bg-white rounded-lg p-6 shadow-sm">
-        <h2 className="text-xl font-bold mb-4 flex items-center">
-          <span className="text-2xl mr-2">📅</span> יומן ראשי
-        </h2>
+      {/* סטטוס חיבור */}
+      <div className="bg-white rounded-lg p-6 shadow-sm mb-8">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full ${
+              user?.googleCalendarConnected ? 'bg-green-500' : 'bg-yellow-500'
+            }`} />
+            <div>
+              <h2 className="font-semibold">סטטוס חיבור ליומן גוגל</h2>
+              <p className={`text-sm ${
+                user?.googleCalendarConnected ? 'text-green-700' : 'text-yellow-700'
+              }`}>
+                {user?.googleCalendarConnected 
+                  ? 'מחובר לגוגל קלנדר' 
+                  : 'לא מחובר לגוגל קלנדר'}
+              </p>
+            </div>
+          </div>
+          
+          <button
+            onClick={connectNewCalendar}
+            className={`px-4 py-2 rounded-lg transition-colors ${
+              user?.googleCalendarConnected
+                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                : 'bg-primary-500 text-white hover:bg-primary-600'
+            }`}
+          >
+            {user?.googleCalendarConnected 
+              ? 'חבר יומן נוסף'
+              : 'חבר יומן Google'}
+          </button>
+        </div>
+      </div>
+
+      {/* יומנים מחוברים */}
+      <section className="mb-8">
+        <h2 className="text-xl font-bold mb-4">יומנים מחוברים</h2>
         <div className="space-y-4">
-          {getCalendarsByType('PRIMARY').map(calendar => (
-            <CalendarCard
-              key={calendar.id}
-              calendar={calendar}
-              onEdit={handleEditCalendar}
-              onToggle={toggleCalendarActive}
-              onRemove={removeCalendar}
-            />
-          ))}
-          {getCalendarsByType('PRIMARY').length === 0 && (
-            <p className="text-neutral-700">לא הוגדר יומן ראשי</p>
+          {connectedCalendars.length === 0 ? (
+            <p className="text-gray-500">אין יומנים מחוברים</p>
+          ) : (
+            connectedCalendars.map(calendar => (
+              <CalendarCard
+                key={calendar.id}
+                calendar={calendar}
+                onEdit={handleEditCalendar}
+                onToggle={toggleCalendarActive}
+                onRemove={removeCalendar}
+              />
+            ))
           )}
         </div>
-      </section>
-
-      {/* יומני עבודה */}
-      <section className="bg-white rounded-lg p-6 shadow-sm">
-        <h2 className="text-xl font-bold mb-4 flex items-center">
-          <span className="text-2xl mr-2">💼</span> יומני עבודה
-        </h2>
-        <div className="space-y-4">
-          {getCalendarsByType('WORK').map(calendar => (
-            <CalendarCard
-              key={calendar.id}
-              calendar={calendar}
-              onEdit={handleEditCalendar}
-              onToggle={toggleCalendarActive}
-              onRemove={removeCalendar}
-            />
-          ))}
-        </div>
-      </section>
-
-      {/* יומני בית */}
-      <section className="bg-white rounded-lg p-6 shadow-sm">
-        <h2 className="text-xl font-bold mb-4 flex items-center">
-          <span className="text-2xl mr-2">🏠</span> יומני בית
-        </h2>
-        <div className="space-y-4">
-          {getCalendarsByType('HOME').map(calendar => (
-            <CalendarCard
-              key={calendar.id}
-              calendar={calendar}
-              onEdit={handleEditCalendar}
-              onToggle={toggleCalendarActive}
-              onRemove={removeCalendar}
-            />
-          ))}
-        </div>
-      </section>
-
-      {/* יומני פנאי */}
-      <section className="bg-white rounded-lg p-6 shadow-sm">
-        <h2 className="text-xl font-bold mb-4 flex items-center">
-          <span className="text-2xl mr-2">🎮</span> יומני פנאי
-        </h2>
-        <div className="space-y-4">
-          {getCalendarsByType('LEISURE').map(calendar => (
-            <CalendarCard
-              key={calendar.id}
-              calendar={calendar}
-              onEdit={handleEditCalendar}
-              onToggle={toggleCalendarActive}
-              onRemove={removeCalendar}
-            />
-          ))}
-        </div>
-      </section>
-
-      {/* הוספת יומן חדש */}
-      <section className="bg-white rounded-lg p-6 shadow-sm">
-        <h2 className="text-xl font-bold mb-4">הוסף יומן חדש</h2>
-        <button
-          onClick={connectNewCalendar}
-          className="bg-primary-500 text-white px-6 py-2 rounded-lg hover:bg-primary-600 transition-colors"
-        >
-          חבר יומן Google חדש
-        </button>
       </section>
 
       {/* דיאלוג בחירת יומן */}

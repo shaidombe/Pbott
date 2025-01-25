@@ -72,7 +72,7 @@ export class TaskScheduler {
     const allEvents = await Promise.all(
       this.calendars.map(cal => cal.getEvents(startDate, endDate))
     );
-    return allEvents.flat();
+    return allEvents.flatMap(response => response.items);
   }
 
   async findNextAvailableSlot(
@@ -173,5 +173,18 @@ export class TaskScheduler {
     }
     
     return windows;
+  }
+
+  async getCalendarEvents(startDate: Date): Promise<CalendarEvent[]> {
+    if (!this.calendars[0]) return [];
+    
+    try {
+      const endDate = addDays(startDate, 1);
+      const response = await this.calendars[0].getEvents(startDate, endDate);
+      return response.items;
+    } catch (error) {
+      console.error('Error fetching calendar events:', error);
+      return [];
+    }
   }
 } 

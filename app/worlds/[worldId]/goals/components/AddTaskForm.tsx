@@ -1,16 +1,21 @@
 'use client';
 import { useState } from 'react';
-import { Task } from '@/app/types';
-import { useApp } from '@/lib/hooks/useApp';
+import { Task, World } from '@/app/types';
+import { useApp } from '@/hooks/useApp';
 import { addDoc, collection, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
+import { TaskScheduler } from '@/app/services/TaskScheduler';
+import { addMinutes, format } from 'date-fns';
+import { he } from 'date-fns/locale';
+import { GoogleCalendarService, GoogleCalendarResponse } from '@/app/types';
 
 interface AddTaskFormProps {
   worldId: string;
   goalId: string;
   task?: Task; // אופציונלי - למקרה של עריכה
+  world: World;  // הוספת world לפרופס
   onComplete: () => void;
   onCancel: () => void;
 }
@@ -45,8 +50,8 @@ const PRIORITY_OPTIONS = [
   }
 ] as const;
 
-export default function AddTaskForm({ worldId, goalId, task, onComplete, onCancel }: AddTaskFormProps) {
-  const { user } = useApp();
+export default function AddTaskForm({ worldId, goalId, task, world, onComplete, onCancel }: AddTaskFormProps) {
+  const { user, googleCalendar } = useApp();
   const [title, setTitle] = useState(task?.title || '');
   const [selectedDuration, setSelectedDuration] = useState<string | number>(task?.estimatedDuration || 30);
   const [customDuration, setCustomDuration] = useState('');
@@ -60,6 +65,7 @@ export default function AddTaskForm({ worldId, goalId, task, onComplete, onCance
     return null;
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [suggestedTime, setSuggestedTime] = useState<Date | null>(null);
 
   const handleDurationChange = (value: string) => {
     setSelectedDuration(value === 'custom' ? 'custom' : Number(value));
@@ -71,6 +77,58 @@ export default function AddTaskForm({ worldId, goalId, task, onComplete, onCance
       return durationUnit === 'hours' ? duration * 60 : duration;
     }
     return selectedDuration as number;
+  };
+
+  const findAvailableSlot = async () => {
+    console.log('Debug findAvailableSlot:', { 
+      userConnected: user?.googleCalendarConnected,
+      hasGoogleCalendar: !!googleCalendar,
+      user,
+      googleCalendar 
+    });
+
+    if (!user?.googleCalendarConnected) {
+      console.log('User not connected to Google Calendar');
+      alert('נא לחבר את היומן בהגדרות היומן');
+      return;
+    }
+
+    if (!googleCalendar) {
+      console.log('GoogleCalendar object is missing');
+      alert('אירעה שגיאה בחיבור ליומן. נא לנסות להתחבר מחדש');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      console.log('Creating TaskScheduler with calendar:', googleCalendar);
+      const scheduler = new TaskScheduler([googleCalendar]);
+      
+      const taskData = {
+        title,
+        estimatedDuration: calculateFinalDuration(),
+        priority,
+        deadline: dueDateTime?.toISOString(),
+        id: task?.id || '',
+        worldId,
+      } as Task;
+      
+      console.log('Finding slot for task:', taskData);
+      
+      const result = await scheduler.findNextAvailableSlot(taskData, world);
+      console.log('Scheduler result:', result);
+      
+      if (result.success && result.scheduledStart) {
+        setSuggestedTime(result.scheduledStart);
+      } else {
+        alert('לא נמצא חלון זמן מתאים למשימה');
+      }
+    } catch (error) {
+      console.error('Detailed error in finding available slot:', error);
+      alert('אירעה שגיאה בחיפוש זמן פנוי');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -88,7 +146,11 @@ export default function AddTaskForm({ worldId, goalId, task, onComplete, onCance
         worldId,
         goalId,
         updatedAt: new Date().toISOString(),
-        createdAt: task?.createdAt || new Date().toISOString()
+        createdAt: task?.createdAt || new Date().toISOString(),
+        scheduledStart: suggestedTime?.toISOString(),
+        scheduledEnd: suggestedTime ? 
+          addMinutes(suggestedTime, calculateFinalDuration()).toISOString() : 
+          null
       };
 
       if (task?.id) {
@@ -104,6 +166,50 @@ export default function AddTaskForm({ worldId, goalId, task, onComplete, onCance
       console.error('Error saving task:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const googleCalendarApi: GoogleCalendarService = {
+    connect: async () => {
+      // ... existing connect logic ...
+    },
+    disconnect: async () => {
+      // ... existing disconnect logic ...
+    },
+    getEvents: async (timeMin: Date, timeMax: Date): Promise<GoogleCalendarResponse> => {
+      if (!user) {
+        return { items: [] };
+      }
+      
+      try {
+        const response = await fetch(
+          `/api/calendar/events?timeMin=${timeMin.toISOString()}&timeMax=${timeMax.toISOString()}`
+        );
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch events');
+        }
+        
+        const data = await response.json();
+        
+        // וידוא שיש לנו מערך items תקין
+        const items = Array.isArray(data.items) ? data.items : [];
+        
+        // החזרת אובייקט בפורמט הנכון
+        return {
+          items: items.map((event: any) => ({
+            id: event.id,
+            source: 'google' as const,
+            calendarId: event.calendarId,
+            title: event.summary || '',
+            start: new Date(event.start.dateTime || event.start.date),
+            end: new Date(event.end.dateTime || event.end.date)
+          }))
+        };
+      } catch (error) {
+        console.error('Error fetching calendar events:', error);
+        return { items: [] };
+      }
     }
   };
 
@@ -215,6 +321,22 @@ export default function AddTaskForm({ worldId, goalId, task, onComplete, onCance
         </div>
       </div>
 
+      {suggestedTime && (
+        <div className="bg-green-50 p-4 rounded-lg">
+          <h3 className="font-medium text-green-800 mb-2">זמן מוצע למשימה:</h3>
+          <p className="text-green-700">
+            {format(suggestedTime, 'EEEE, d בMMMM בשעה HH:mm', { locale: he })}
+          </p>
+          <button
+            type="button"
+            onClick={findAvailableSlot}
+            className="mt-2 text-sm text-green-600 hover:text-green-800"
+          >
+            חפש זמן אחר
+          </button>
+        </div>
+      )}
+
       <div className="flex gap-2 justify-end">
         <button
           type="button"
@@ -223,13 +345,24 @@ export default function AddTaskForm({ worldId, goalId, task, onComplete, onCance
         >
           ביטול
         </button>
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="px-4 py-2 bg-primary-500 text-white rounded-md hover:bg-primary-600 disabled:opacity-50"
-        >
-          {isLoading ? 'שומר...' : task?.id ? 'עדכן משימה' : 'הוסף משימה'}
-        </button>
+        {!suggestedTime ? (
+          <button
+            type="button"
+            onClick={findAvailableSlot}
+            disabled={isLoading}
+            className="px-4 py-2 bg-primary-500 text-white rounded-md hover:bg-primary-600 disabled:opacity-50"
+          >
+            {isLoading ? 'מחפש זמן פנוי...' : 'מצא זמן פנוי'}
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="px-4 py-2 bg-primary-500 text-white rounded-md hover:bg-primary-600 disabled:opacity-50"
+          >
+            {isLoading ? 'שומר...' : task?.id ? 'עדכן משימה' : 'הוסף משימה'}
+          </button>
+        )}
       </div>
     </form>
   );

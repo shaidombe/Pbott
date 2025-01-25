@@ -23,12 +23,19 @@ export default function DailySchedule() {
 
   useEffect(() => {
     const fetchEvents = async () => {
-      if (googleCalendar) {
-        const events = await googleCalendar.getEvents(
-          startOfDay(today),
-          endOfDay(today)
-        );
-        setCalendarEvents(events);
+      if (!googleCalendar) {
+        setCalendarEvents([]);
+        return;
+      }
+      
+      try {
+        const todayStart = startOfDay(today);
+        const todayEnd = endOfDay(today);
+        const response = await googleCalendar.getEvents(todayStart, todayEnd);
+        setCalendarEvents(response.items);
+      } catch (error) {
+        console.error('Error fetching events:', error);
+        setCalendarEvents([]);
       }
     };
     

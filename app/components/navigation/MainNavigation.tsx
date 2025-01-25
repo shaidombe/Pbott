@@ -41,6 +41,10 @@ export default function MainNavigation() {
             <span className="text-2xl">📋</span>
             <span className="text-xs mt-1">משימות</span>
           </Link>
+          <Link href="/events" className="flex flex-col items-center justify-center w-16 h-16 text-neutral-600 hover:text-primary-500">
+            <span className="text-2xl">📅</span>
+            <span className="text-xs mt-1">יומן</span>
+          </Link>
           <button 
             onClick={() => setIsProfileOpen(!isProfileOpen)}
             className="flex flex-col items-center justify-center w-16 h-16 text-neutral-600 hover:text-primary-500"
@@ -73,9 +77,9 @@ export default function MainNavigation() {
                 <span>📋</span>
                 <span>משימות</span>
               </Link>
-              <Link href="/calendars" className="text-neutral-600 hover:text-primary-500 transition-colors inline-flex items-center gap-2">
+              <Link href="/events" className="text-neutral-600 hover:text-primary-500 transition-colors inline-flex items-center gap-2">
                 <span>📅</span>
-                <span>יומנים</span>
+                <span>יומן</span>
               </Link>
 
               {/* Profile Menu */}

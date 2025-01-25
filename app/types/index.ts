@@ -132,15 +132,33 @@ export const convertPriorityToGoogle = (priority: Task['priority']): GooglePrior
 
 export interface CalendarEvent {
   id: string;
-  summary: string | null;
+  summary: string;
+  description?: string;
   start: {
     dateTime: string;
+    date?: string;
   };
   end: {
     dateTime: string;
+    date?: string;
   };
+  backgroundColor?: string;
+}
+
+export interface GoogleCalendarResponse {
+  items: CalendarEvent[];
 }
 
 export interface GoogleCalendarService {
-  getEvents: (timeMin: Date, timeMax: Date) => Promise<CalendarEvent[]>;
+  connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
+  getEvents: (timeMin: Date, timeMax: Date) => Promise<GoogleCalendarResponse>;
+}
+
+export interface AppContextType {
+  user: User | null;
+  setUser: (user: User | null) => void;
+  loading: boolean;
+  googleCalendar: GoogleCalendarService;
+  connectedCalendars: ConnectedCalendar[];
 } 

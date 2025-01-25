@@ -15,4 +15,14 @@ export interface CalendarEvent extends BaseCalendarEvent {
 export interface CalendarViewEvent extends BaseCalendarEvent {
   worldId?: string;
   isTask?: boolean;
+}
+
+export interface GoogleCalendarResponse {
+  items: CalendarEvent[];
+}
+
+export interface GoogleCalendarService {
+  connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
+  getEvents: (timeMin: Date, timeMax: Date) => Promise<GoogleCalendarResponse>;
 } 

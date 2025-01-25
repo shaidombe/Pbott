@@ -1,11 +1,12 @@
 'use client';
-import { useState } from 'react';
-import { Task } from '@/app/types';
+import { useState, useEffect } from 'react';
+import { Task, World } from '@/app/types';
 import AddTaskForm from './AddTaskForm';
 import { PencilIcon } from '@heroicons/react/24/outline';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { useApp } from '@/lib/hooks/useApp';
+import { WorldCategory } from '@/app/types';
 
 interface TaskListProps {
   worldId: string;
@@ -43,6 +44,14 @@ export default function TaskList({ worldId, goalId, tasks, onUpdate }: TaskListP
   const { user } = useApp();
   const [showAddTask, setShowAddTask] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [isGoogleCalendarConnected, setIsGoogleCalendarConnected] = useState(false);
+
+  useEffect(() => {
+    // בדיקת חיבור ליומן גוגל
+    if (user?.googleCalendarConnected) {
+      setIsGoogleCalendarConnected(true);
+    }
+  }, [user]);
 
   const handleStatusChange = async (task: Task) => {
     if (!user) return;
@@ -133,6 +142,18 @@ export default function TaskList({ worldId, goalId, tasks, onUpdate }: TaskListP
       {(showAddTask || editingTask) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-6 max-w-md w-full">
+            {!isGoogleCalendarConnected && (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                <p>⚠️ שים לב: היומן אינו מחובר לגוגל קלנדר.</p>
+                <a 
+                  href="/calendars" 
+                  className="text-primary-600 hover:underline mt-1 block"
+                >
+                  לחץ כאן לחיבור היומן
+                </a>
+              </div>
+            )}
+            
             <h3 className="text-lg font-semibold mb-4">
               {editingTask ? 'עריכת משימה' : 'הוספת משימה חדשה'}
             </h3>
@@ -140,6 +161,16 @@ export default function TaskList({ worldId, goalId, tasks, onUpdate }: TaskListP
               worldId={worldId}
               goalId={goalId}
               task={editingTask || undefined}
+              world={{
+                id: worldId,
+                userId: user?.id || '',
+                name: '',
+                category: WorldCategory.CUSTOM,
+                isActive: true,
+                timeSlots: [],
+                createdAt: new Date(),
+                updatedAt: new Date()
+              }}
               onComplete={() => {
                 setShowAddTask(false);
                 setEditingTask(null);

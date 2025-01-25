@@ -2,9 +2,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { GoogleCalendarService } from '@/lib/services/googleCalendar';
+import { useApp } from '@/lib/hooks/useApp';
 
 export default function CalendarCallback() {
   const router = useRouter();
+  const { updateGoogleCalendarStatus } = useApp();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,8 +31,11 @@ export default function CalendarCallback() {
           // שמירת הטוקן ב-localStorage לשימוש זמני
           localStorage.setItem('temp_calendar_token', accessToken);
           
+          // עדכון סטטוס חיבור הקלנדר
+          await updateGoogleCalendarStatus(true);
+          
           // חזרה לדף היומנים עם פרמטר שמציין שיש לבחור סוג יומן
-          router.push('/dashboard/calendars?action=select_calendar');
+          router.push('/calendars?action=select_calendar');
         } catch (error) {
           console.error('Error validating token:', error);
           throw new Error('Token validation failed');
@@ -42,7 +47,7 @@ export default function CalendarCallback() {
     };
 
     handleCallback();
-  }, [router]);
+  }, [router, updateGoogleCalendarStatus]);
 
   if (error) {
     return (
@@ -50,7 +55,7 @@ export default function CalendarCallback() {
         <div className="text-center text-red-600">
           <h1 className="text-2xl mb-4">{error}</h1>
           <button 
-            onClick={() => router.push('/dashboard/calendars')}
+            onClick={() => router.push('/calendars')}
             className="text-primary-500 hover:underline"
           >
             חזור לדף היומנים
