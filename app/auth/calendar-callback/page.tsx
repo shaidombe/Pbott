@@ -1,51 +1,49 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/app/contexts/AppContext';
 
 const CalendarCallback = () => {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const [isProcessing, setIsProcessing] = useState(false);
+  const router = useRouter();
+  const isProcessingRef = useRef(false);
   const { updateGoogleCalendarStatus } = useApp();
+  
+  const handleCallback = useCallback(async () => {
+    if (isProcessingRef.current) {
+      console.log('Already processing callback, skipping');
+      return;
+    }
 
-  const handleCallback = async () => {
+    isProcessingRef.current = true;
+
     try {
-      setIsProcessing(true);
       const code = searchParams.get('code');
-      const returnedState = searchParams.get('state');
-      const savedState = localStorage.getItem('googleCalendarState');
-
-      if (!code || !returnedState) {
-        throw new Error('Missing required OAuth parameters');
+      if (!code) {
+        console.error('No authorization code received');
+        router.push('/calendars?error=no_code');
+        return;
       }
 
-      console.log('Sending token exchange request with:', {
+      const redirectUri = window.location.origin + '/auth/calendar-callback';
+      
+      console.log('Starting token exchange with params:', {
         code: code.substring(0, 10) + '...',
-        redirectUri: window.location.origin + '/auth/calendar-callback'
+        redirectUri,
+        timestamp: new Date().toISOString()
       });
 
       const response = await fetch('/api/auth/google-calendar', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          code,
-          redirectUri: window.location.origin + '/auth/calendar-callback'
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, redirectUri })
       });
 
       const data = await response.json();
-      
-      console.log('Token exchange response:', {
-        status: response.status,
-        ok: response.ok,
-        data: {
-          success: data.success,
-          hasError: !!data.error,
-          hasToken: !!data.token
-        }
+      console.log('API Response:', { 
+        status: response.status, 
+        statusText: response.statusText,
+        data 
       });
 
       if (!response.ok) {
@@ -67,20 +65,22 @@ const CalendarCallback = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       router.push(`/calendars?error=auth_failed&details=${encodeURIComponent(errorMessage)}`);
     } finally {
-      setIsProcessing(false);
+      isProcessingRef.current = false;
     }
-  };
+  }, [searchParams, router, updateGoogleCalendarStatus]);
 
-  // Use useEffect with empty dependency array to run only once
   useEffect(() => {
     handleCallback();
-    // Clean up function
-    return () => {
-      setIsProcessing(false);
-    };
-  }, []); // Empty dependency array
+  }, [handleCallback]);
 
-  return <div>מאמת את החיבור לגוגל קלנדר...</div>;
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <h1 className="text-2xl mb-4">מאמת את החיבור לגוגל קלנדר...</h1>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mx-auto"></div>
+      </div>
+    </div>
+  );
 };
 
 export default CalendarCallback; 

@@ -1,121 +1,94 @@
-import { google } from 'googleapis';
-import { OAuth2Client } from 'google-auth-library';
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { db } from '@/lib/firebase/admin';
-import { authOptions } from '@/lib/auth';
-import { calendar_v3 } from 'googleapis';
+import { google } from 'googleapis';
+import { db, adminAuth } from '@/lib/firebase/admin';
 
 export async function GET(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    console.log('Session:', {
-      hasSession: !!session,
-      userId: session?.user?.id,
-      email: session?.user?.email
-    });
-
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized - No session' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
+    const calendarId = searchParams.get('calendarId');
     const timeMin = searchParams.get('timeMin');
     const timeMax = searchParams.get('timeMax');
-    const calendarId = searchParams.get('calendarId');
 
-    console.log('Calendar API request params:', { timeMin, timeMax, calendarId });
+    // Get Firebase token from request headers
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('No authorization token provided');
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    const userDoc = await db.collection('users').doc(session.user.id).get();
-    const userData = userDoc.data();
-    console.log('User data from Firestore:', {
-      hasTokens: !!userData?.googleCalendarTokens,
-      isConnected: userData?.googleCalendarConnected,
-      tokenExpiry: userData?.googleCalendarTokens?.expiry_date,
-      email: userData?.email
-    });
+    const token = authHeader.split('Bearer ')[1];
     
-    if (!userData?.googleCalendarTokens) {
-      console.error('No calendar tokens found for user:', session.user.id);
+    try {
+      // Verify the Firebase token
+      const decodedToken = await adminAuth.verifyIdToken(token);
+      console.log('Verified token for user:', decodedToken.uid);
+
+      // Get user data from Firestore
+      const userDoc = await db.collection('users').doc(decodedToken.uid).get();
+
+      if (!userDoc.exists) {
+        console.error('No user document found for uid:', decodedToken.uid);
+        return NextResponse.json({ error: 'User not found' }, { status: 401 });
+      }
+
+      const userData = userDoc.data();
+      
+      if (!userData?.googleCalendarTokens) {
+        console.error('No Google Calendar tokens found for user:', decodedToken.uid);
+        return NextResponse.json({ error: 'No calendar tokens found' }, { status: 401 });
+      }
+
+      // Initialize Google Calendar client
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
+        process.env.GOOGLE_REDIRECT_URI
+      );
+
+      oauth2Client.setCredentials(userData.googleCalendarTokens);
+
+      // Check if token is expired
+      const isTokenExpired = userData.googleCalendarTokens.expiry_date < Date.now();
+      
+      if (isTokenExpired) {
+        console.log('Token expired, refreshing...');
+        try {
+          const { credentials } = await oauth2Client.refreshAccessToken();
+          await db.collection('users').doc(decodedToken.uid).update({
+            googleCalendarTokens: credentials
+          });
+          oauth2Client.setCredentials(credentials);
+        } catch (refreshError) {
+          console.error('Error refreshing token:', refreshError);
+          return NextResponse.json({ error: 'Token refresh failed' }, { status: 401 });
+        }
+      }
+
+      const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+      
+      console.log(`Fetching events for calendar: ${calendarId}`);
+      const response = await calendar.events.list({
+        calendarId: calendarId || 'primary',
+        timeMin: timeMin || new Date().toISOString(),
+        timeMax: timeMax || new Date(Date.now() + 24*60*60*1000).toISOString(),
+        singleEvents: true,
+        orderBy: 'startTime',
+      });
+
+      return NextResponse.json(response.data);
+      
+    } catch (error) {
+      console.error('Calendar events error:', error);
       return NextResponse.json(
-        { error: 'No calendar tokens found' }, 
-        { status: 401 }
+        { error: 'Failed to fetch calendar events' }, 
+        { status: 500 }
       );
     }
-
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI
-    );
-
-    oauth2Client.setCredentials(userData.googleCalendarTokens);
-
-    // בדיקה אם הטוקן פג תוקף
-    const isTokenExpired = userData.googleCalendarTokens.expiry_date < Date.now();
-    
-    if (isTokenExpired) {
-      console.log('Token expired, refreshing...');
-      try {
-        const { credentials } = await oauth2Client.refreshAccessToken();
-        // עדכון הטוקן בפיירבייס
-        await db.collection('users').doc(session.user.id).update({
-          'googleCalendarTokens': credentials
-        });
-        oauth2Client.setCredentials(credentials);
-        console.log('Token refreshed successfully');
-      } catch (refreshError) {
-        console.error('Error refreshing token:', refreshError);
-        return NextResponse.json(
-          { error: 'Failed to refresh token' }, 
-          { status: 401 }
-        );
-      }
-    }
-
-    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-
-    console.log(`Fetching events for calendar: ${calendarId}`);
-    const response = await calendar.events.list({
-      calendarId: calendarId || 'primary',
-      timeMin: timeMin || new Date().toISOString(),
-      timeMax: timeMax || new Date(Date.now() + 24*60*60*1000).toISOString(),
-      singleEvents: true,
-      orderBy: 'startTime',
-    } as calendar_v3.Params$Resource$Events$List);
-
-    console.log(`Events found for calendar ${calendarId}:`, {
-      count: response.data?.items?.length
-    });
-
-    return NextResponse.json(response.data);
-
-  } catch (error: any) {
-    console.error('Calendar API error:', {
-      message: error.message,
-      code: error.code,
-      stack: error.stack,
-      response: error.response?.data
-    });
-    
-    // אם זו שגיאת הרשאה, ננסה לנקות את הטוקן ולהחזיר שגיאה מתאימה
-    if (error.code === 401 || error.message?.includes('auth')) {
-      const session = await getServerSession(authOptions);
-      if (session?.user?.id) {
-        await db.collection('users').doc(session.user.id).update({
-          googleCalendarConnected: false,
-          googleCalendarTokens: null
-        });
-      }
-      return NextResponse.json(
-        { error: 'Calendar authorization expired. Please reconnect your calendar.' }, 
-        { status: 401 }
-      );
-    }
-    
+  } catch (error) {
+    console.error('Request error:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch events' }, 
-      { status: error.code === 401 ? 401 : 500 }
+      { error: 'Internal server error' }, 
+      { status: 500 }
     );
   }
 } 

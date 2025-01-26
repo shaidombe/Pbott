@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
+import { Credentials } from 'google-auth-library';
 
 export async function POST(request: Request) {
   try {
@@ -8,7 +9,7 @@ export async function POST(request: Request) {
     console.log('Token exchange request details:', {
       hasCode: !!code,
       hasRedirectUri: !!redirectUri,
-      clientId: !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+      clientId: !!process.env.GOOGLE_CLIENT_ID,
       clientSecret: !!process.env.GOOGLE_CLIENT_SECRET
     });
 
@@ -19,28 +20,24 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get the base URL and ensure HTTPS in production
-    const host = request.headers.get('host') || '';
-    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-    const baseUrl = `${protocol}://${host}`;
-    
-    console.log('Using redirect URI:', `${baseUrl}/auth/calendar-callback`);
-    console.log('Client ID exists:', !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
+    console.log('Using provided redirect URI:', redirectUri);
+    console.log('Client ID exists:', !!process.env.GOOGLE_CLIENT_ID);
     console.log('Client Secret exists:', !!process.env.GOOGLE_CLIENT_SECRET);
 
     const oauth2Client = new google.auth.OAuth2(
-      process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
       redirectUri
     );
 
     try {
+      console.log('Attempting to exchange code for tokens...');
       const { tokens } = await oauth2Client.getToken(code);
       
       console.log('Got tokens from Google:', {
         hasAccessToken: !!tokens.access_token,
         hasRefreshToken: !!tokens.refresh_token,
-        expiryDate: tokens.expiry_date
+        expiryDate: tokens.expiry_date,
       });
 
       if (!tokens.access_token) {
@@ -53,11 +50,17 @@ export async function POST(request: Request) {
       });
 
     } catch (tokenError: any) {
-      console.error('Token exchange error:', tokenError);
+      console.error('Token exchange error details:', {
+        message: tokenError.message,
+        response: tokenError.response?.data,
+        code: tokenError.code
+      });
+      
       return NextResponse.json(
         { 
           error: 'Failed to exchange authorization code for tokens',
-          details: tokenError.message 
+          details: tokenError.message,
+          googleError: tokenError.response?.data
         },
         { status: 400 }
       );

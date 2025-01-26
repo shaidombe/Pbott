@@ -21,20 +21,38 @@ import Link from 'next/link';
 import { Cog6ToothIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import Sidebar from './components/Sidebar';
 import { useRouter } from 'next/navigation';
+import { auth } from '@/lib/firebase/config';
 
 type ViewType = 'day' | 'week' | 'month';
 
 export default function EventsCalendar() {
-  const { user, connectedCalendars, updateGoogleCalendarStatus } = useApp();
+  const { user, connectedCalendars, updateGoogleCalendarStatus, isLoading } = useApp();
   const [view, setView] = useState<ViewType>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [showSidebar, setShowSidebar] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
   const authErrorHandled = useRef(false);
   const router = useRouter();
+
+  useEffect(() => {
+    console.log('Events page state:', {
+      isLoading,
+      user: {
+        exists: !!user,
+        calendarConnected: user?.googleCalendarConnected
+      },
+      calendars: {
+        count: connectedCalendars.length,
+        details: connectedCalendars.map(cal => ({
+          id: cal.id,
+          name: cal.name,
+          isActive: cal.isActive
+        }))
+      }
+    });
+  }, [user, connectedCalendars, isLoading]);
 
   // פונקציה לגלילה לשעה הנוכחית
   const scrollToCurrentTime = useCallback(() => {
@@ -50,142 +68,81 @@ export default function EventsCalendar() {
 
   // פטצ' אירועים מכל היומנים המחוברים והפעילים
   useEffect(() => {
-    const fetchEvents = async () => {
-      if (!user) {
-        console.log('No user found');
-        return;
-      }
-
-      if (!user.googleCalendarConnected) {
-        console.log('User not connected to Google Calendar');
-        setError('נדרש חיבור מחדש ליומן גוגל');
-        return;
-      }
-
-      if (authErrorHandled.current) {
-        console.log('Auth error already handled, skipping fetch');
-        return;
-      }
-
-      setIsLoading(true);
-      setError(null);
+    const fetchCalendarEvents = async () => {
+      if (!connectedCalendars.length) return;
 
       try {
-        const activeCalendars = connectedCalendars.filter(cal => cal.isActive);
-        console.log('Active calendars for fetching:', activeCalendars);
-
-        if (activeCalendars.length === 0) {
-          console.log('No active calendars found');
-          setEvents([]);
-          setError('לא נבחרו יומנים להצגה');
+        const firebaseUser = auth.currentUser;
+        if (!firebaseUser) {
+          console.error('No Firebase user found');
           return;
         }
 
-        // קביעת טווח התאריכים לפי סוג התצוגה
-        let startTime: Date, endTime: Date;
-        switch (view) {
-          case 'day':
-            startTime = startOfDay(currentDate);
-            endTime = endOfDay(currentDate);
-            break;
-          case 'week':
-            startTime = startOfWeek(currentDate, { locale: he });
-            endTime = endOfWeek(currentDate, { locale: he });
-            break;
-          case 'month':
-            startTime = startOfMonth(currentDate);
-            endTime = endOfMonth(currentDate);
-            break;
-        }
+        const idToken = await firebaseUser.getIdToken(true);
+        console.log('Got Firebase token for user:', {
+          uid: firebaseUser.uid,
+          hasToken: !!idToken
+        });
 
-        console.log('Fetching events for time range:', { startTime, endTime, view });
+        setEvents([]);
+        setFetchError(null);
 
-        const allEvents: CalendarEvent[] = [];
-        let hasAuthError = false;
+        // הגדרת טווח התאריכים
+        const startTime = new Date();
+        const endTime = new Date();
+        endTime.setDate(endTime.getDate() + 7); // שבוע קדימה
 
-        // Add reconnection button when error occurs
-        const handleReconnect = () => {
-          router.push('/calendars?action=reconnect');
-        };
+        for (const calendar of connectedCalendars) {
+          if (!calendar.isActive) {
+            console.log(`Skipping inactive calendar: ${calendar.id}`);
+            continue;
+          }
 
-        for (const calendar of activeCalendars) {
-          try {
-            console.log(`Fetching events for calendar: ${calendar.id} (${calendar.name})`);
-            const response = await fetch(
-              `/api/calendar/events?` +
-              `calendarId=${encodeURIComponent(calendar.id)}` +
-              `&timeMin=${startTime.toISOString()}` +
-              `&timeMax=${endTime.toISOString()}`
-            );
-
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({ error: response.statusText }));
-              console.log('Raw error response:', JSON.stringify(errorData));
-              console.log('Parsed error data:', errorData);
-
-              if (response.status === 401 || 
-                  (typeof errorData.error === 'string' && errorData.error.includes('auth'))) {
-                console.log('Auth error detected, updating calendar status');
-                authErrorHandled.current = true;
-                await updateGoogleCalendarStatus(false);
-                setError('נדרש חיבור מחדש ליומן גוגל');
-                return;
+          console.log(`Fetching events for calendar: ${calendar.id}`);
+          
+          const response = await fetch(
+            `/api/calendar/events?` +
+            `calendarId=${encodeURIComponent(calendar.id)}` +
+            `&timeMin=${startTime.toISOString()}` +
+            `&timeMax=${endTime.toISOString()}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${idToken}`,
+                'Content-Type': 'application/json',
               }
+            }
+          );
 
-              console.error(`HTTP error for calendar ${calendar.id}:`, {
-                status: response.status,
-                statusText: response.statusText,
-                error: errorData,
-                url: response.url,
-                headers: Object.fromEntries(response.headers.entries())
-              });
-              continue;
-            }
+          const responseData = await response.json();
 
-            const data = await response.json();
-            if (data.items) {
-              const eventsWithColor = data.items.map((event: any) => ({
-                ...event,
-                backgroundColor: calendar.color,
-                calendarId: calendar.id,
-                calendarName: calendar.name
-              }));
-              
-              allEvents.push(...eventsWithColor);
-            }
-          } catch (error) {
-            console.error(`Error fetching events for calendar ${calendar.id}:`, error);
-            if (error instanceof Error) {
-              setError(`שגיאה בטעינת יומן ${calendar.name}: ${error.message}`);
-            }
+          if (!response.ok) {
+            console.error('Calendar API error:', {
+              status: response.status,
+              error: responseData,
+              calendarId: calendar.id
+            });
+            throw new Error(responseData.error || 'Failed to fetch events');
+          }
+
+          console.log('Got calendar events:', {
+            calendarId: calendar.id,
+            eventCount: responseData.items?.length
+          });
+          
+          if (responseData.items?.length) {
+            setEvents(prev => [...prev, ...responseData.items]);
           }
         }
-
-        if (hasAuthError) {
-          console.log('Auth error detected, updating calendar status');
-          authErrorHandled.current = true;
-          await updateGoogleCalendarStatus(false);
-          setError('נדרש חיבור מחדש ליומן גוגל');
-          return;
-        }
-
-        setEvents(allEvents);
       } catch (error) {
-        console.error('Error in fetchEvents:', error);
-        setError('אירעה שגיאה בטעינת האירועים');
-      } finally {
-        setIsLoading(false);
+        console.error('Error fetching events:', error);
+        setFetchError(error instanceof Error ? error.message : 'Failed to fetch events');
       }
     };
 
-    if (user && connectedCalendars.length > 0) {
-      fetchEvents();
+    if (connectedCalendars.length > 0) {
+      fetchCalendarEvents();
     }
-
-    return () => {
-      authErrorHandled.current = false;
-    };
-  }, [user, connectedCalendars, currentDate, view, updateGoogleCalendarStatus, router]);
+  }, [connectedCalendars]);
 
   // גלילה לשעה הנוכחית בטעינה ראשונית ובמעבר בין תצוגות
   useEffect(() => {
@@ -215,6 +172,32 @@ export default function EventsCalendar() {
     setCurrentDate(new Date());
     scrollToCurrentTime();
   };
+
+  // מצב טעינה
+  if (isLoading) {
+    return <div>טוען...</div>;
+  }
+
+  // אם אין משתמש מחובר, נחזיר לדף הראשי
+  if (!user) {
+    router.push('/');
+    return null;
+  }
+
+  // אם יש משתמש אבל אין יומנים מחוברים, נפנה לדף החיבור
+  if (!user.googleCalendarConnected || connectedCalendars.length === 0) {
+    return (
+      <div className="text-center p-4">
+        <h2 className="text-xl mb-4">אין יומנים מחוברים</h2>
+        <Link 
+          href="/calendars" 
+          className="text-blue-500 hover:text-blue-700 underline"
+        >
+          לחץ כאן כדי לחבר יומן
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed top-16 bottom-0 left-0 right-0 flex">
@@ -307,10 +290,10 @@ export default function EventsCalendar() {
             </button>
           </div>
 
-          {error && (
+          {fetchError && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg mt-2 flex justify-between items-center">
-              <span>{error}</span>
-              {typeof error === 'string' && error.includes('חיבור מחדש') && (
+              <span>{fetchError}</span>
+              {typeof fetchError === 'string' && fetchError.includes('חיבור מחדש') && (
                 <Link 
                   href="/calendars"
                   className="text-red-700 hover:text-red-800 underline text-sm"
