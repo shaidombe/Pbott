@@ -46,14 +46,16 @@ export default function Sidebar({ showSidebar }: SidebarProps) {
               </div>
               <button
                 onClick={() => toggleCalendarActive(calendar)}
-                className={`w-4 h-4 rounded border ${
-                  calendar.isActive 
+                className={`
+                  w-4 h-4 rounded border flex items-start justify-center
+                  ${calendar.isActive 
                     ? 'bg-primary-500 border-primary-500' 
                     : 'bg-white border-gray-300'
-                }`}
+                  }
+                `}
               >
                 {calendar.isActive && (
-                  <span className="text-white text-xs">✓</span>
+                  <span className="text-white text-[10px] leading-3">✓</span>
                 )}
               </button>
             </div>
