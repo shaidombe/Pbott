@@ -130,7 +130,11 @@ export default function EventsCalendar() {
           });
           
           if (responseData.items?.length) {
-            setEvents(prev => [...prev, ...responseData.items]);
+            const eventsWithColor = responseData.items.map((event: CalendarEvent) => ({
+              ...event,
+              calendarColor: calendar.color
+            }));
+            setEvents(prev => [...prev, ...eventsWithColor]);
           }
         }
       } catch (error) {

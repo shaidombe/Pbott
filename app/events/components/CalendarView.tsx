@@ -26,7 +26,7 @@ export default function CalendarView({ view, currentDate, events, renderTimeIndi
     return {
       top: `${top}%`,
       height: `${height}%`,
-      backgroundColor: event.backgroundColor || '#4285f4',
+      backgroundColor: event.calendarColor || event.backgroundColor || '#4285f4',
     };
   };
 
@@ -262,7 +262,7 @@ export default function CalendarView({ view, currentDate, events, renderTimeIndi
                               isAllDay ? 'bg-opacity-20' : 'hover:bg-opacity-90'
                             }`}
                             style={{ 
-                              backgroundColor: event.backgroundColor || '#4285f4',
+                              backgroundColor: event.calendarColor || event.backgroundColor || '#4285f4',
                               color: isAllDay ? 'inherit' : 'white'
                             }}
                           >

@@ -65,15 +65,23 @@ export default function DailySchedule() {
     ...calendarEvents
       .filter(event => 
         event.start.dateTime && 
+        event.end.dateTime &&
         isSameDay(parseISO(event.start.dateTime), today)
       )
-      .map(event => ({
-        id: event.id,
-        type: 'event' as const,
-        title: event.summary || 'אירוע ללא כותרת',
-        start: parseISO(event.start.dateTime),
-        end: parseISO(event.end.dateTime),
-      }))
+      .map(event => {
+        if (!event.start.dateTime || !event.end.dateTime) {
+          return null;
+        }
+        
+        return {
+          id: event.id,
+          type: 'event' as const,
+          title: event.summary || 'אירוע ללא כותרת',
+          start: parseISO(event.start.dateTime),
+          end: parseISO(event.end.dateTime),
+        };
+      })
+      .filter((event): event is NonNullable<typeof event> => event !== null)
   ].sort((a, b) => a.start.getTime() - b.start.getTime());
 
   // מציאת חלונות זמן פנויים

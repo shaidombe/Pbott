@@ -135,14 +135,15 @@ export interface CalendarEvent {
   summary: string;
   description?: string;
   start: {
-    dateTime: string;
+    dateTime?: string;
     date?: string;
   };
   end: {
-    dateTime: string;
+    dateTime?: string;
     date?: string;
   };
   backgroundColor?: string;
+  calendarColor?: string;
 }
 
 export interface GoogleCalendarResponse {
