@@ -62,21 +62,25 @@ export default function CalendarView({ view, currentDate, events, renderTimeIndi
                 const eventDate = parseISO(event.start.dateTime || event.start.date || '');
                 return isSameDay(eventDate, currentDate);
               })
-              .map(event => (
-                <div
-                  key={event.id}
-                  className="absolute left-0 right-0 px-2 rounded overflow-hidden"
-                  style={getEventStyle(event)}
-                >
-                  <div className="h-full p-1 text-white text-sm overflow-hidden">
-                    <div className="font-semibold">{event.summary}</div>
-                    <div className="text-xs opacity-90">
-                      {format(parseISO(event.start.dateTime || event.start.date || ''), 'HH:mm')} - 
-                      {format(parseISO(event.end.dateTime || event.end.date || ''), 'HH:mm')}
+              .map(event => {
+                const eventDate = parseISO(event.start.dateTime || event.start.date || '');
+                const uniqueKey = `${event.id}_${format(eventDate, 'yyyyMMdd')}`;
+                return (
+                  <div
+                    key={uniqueKey}
+                    className="absolute left-0 right-0 px-2 rounded overflow-hidden"
+                    style={getEventStyle(event)}
+                  >
+                    <div className="h-full p-1 text-white text-sm overflow-hidden">
+                      <div className="font-semibold">{event.summary}</div>
+                      <div className="text-xs opacity-90">
+                        {format(parseISO(event.start.dateTime || event.start.date || ''), 'HH:mm')} - 
+                        {format(parseISO(event.end.dateTime || event.end.date || ''), 'HH:mm')}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
           </div>
         </div>
       </div>
@@ -203,10 +207,11 @@ export default function CalendarView({ view, currentDate, events, renderTimeIndi
                       {dayEvents.map((event, index) => {
                         const startTime = parseISO(event.start.dateTime || event.start.date || '');
                         const isAllDay = !event.start.dateTime;
+                        const uniqueKey = `${event.id}_${format(startTime, 'yyyyMMdd')}`;
                         
                         return (
                           <div
-                            key={event.id}
+                            key={uniqueKey}
                             className={`text-xs rounded-lg overflow-hidden ${
                               isAllDay ? 'bg-opacity-20' : 'hover:bg-opacity-90'
                             }`}
