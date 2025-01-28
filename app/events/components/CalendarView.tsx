@@ -31,56 +31,93 @@ export default function CalendarView({ view, currentDate, events, renderTimeIndi
   };
 
   const renderDayView = () => {
-    return (
-      <div className="relative h-[1440px]"> {/* 24 שעות * 60 פיקסלים */}
-        <div className="absolute inset-0 grid grid-cols-[4rem_1fr] divide-x divide-gray-200">
-          {/* עמודת שעות */}
-          <div className="grid grid-rows-24 text-sm text-gray-500">
-            {hours.map(hour => (
-              <div key={hour} className="relative h-20">
-                <span className="absolute -top-2.5 right-2">
-                  {format(new Date().setHours(hour, 0), 'HH:mm')}
-                </span>
-              </div>
-            ))}
-          </div>
+    // מיון האירועים ליום מלא ואירועים רגילים
+    const dayEvents = events.reduce((acc, event) => {
+      const eventDate = parseISO(event.start.dateTime || event.start.date || '');
+      if (isSameDay(eventDate, currentDate)) {
+        if (!event.start.dateTime) {
+          acc.allDay.push(event);
+        } else {
+          acc.timed.push(event);
+        }
+      }
+      return acc;
+    }, { allDay: [] as CalendarEvent[], timed: [] as CalendarEvent[] });
 
-          {/* אזור אירועים */}
-          <div className="relative">
-            {renderTimeIndicator()}
-            
-            {/* קווי רשת */}
-            <div className="absolute inset-0 grid grid-rows-24 pointer-events-none">
-              {hours.map(hour => (
-                <div key={hour} className="border-t border-gray-100" />
+    const { allDay, timed } = dayEvents;
+
+    return (
+      <div className="flex flex-col h-full">
+        {/* Header Section - Fixed */}
+        <div className="border-b p-3 text-center bg-white">
+          <div className="text-xl font-semibold">
+            {format(currentDate, 'EEEE', { locale: he })}
+          </div>
+          <div className="text-gray-500">
+            {format(currentDate, 'd בMMMM yyyy', { locale: he })}
+          </div>
+        </div>
+
+        {/* All-day events section */}
+        {allDay.length > 0 && (
+          <div className="grid grid-cols-[4rem_1fr] border-b bg-gray-50">
+            <div className="border-r text-sm p-2 text-gray-500">יום מלא</div>
+            <div className="p-1">
+              {allDay.map(event => (
+                <div
+                  key={`${event.id}_${event.calendarId}`}
+                  className="px-1 py-0.5 mb-1 text-xs bg-primary-100 text-primary-800 rounded-sm truncate hover:bg-primary-200 transition-colors cursor-pointer"
+                  title={event.summary}
+                >
+                  {event.summary}
+                </div>
               ))}
             </div>
+          </div>
+        )}
 
-            {/* אירועים */}
-            {events
-              .filter(event => {
-                const eventDate = parseISO(event.start.dateTime || event.start.date || '');
-                return isSameDay(eventDate, currentDate);
-              })
-              .map(event => {
-                const eventDate = parseISO(event.start.dateTime || event.start.date || '');
-                const eventKey = `${event.id}_${event.calendarId || 'default'}_${format(eventDate, 'yyyyMMdd')}`;
-                return (
+        {/* Time grid - Scrollable */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="relative h-[1440px]">
+            <div className="absolute inset-0 grid grid-cols-[4rem_1fr] divide-x divide-gray-200">
+              {/* Time column */}
+              <div className="grid grid-rows-24 text-sm text-gray-500">
+                {hours.map(hour => (
+                  <div key={hour} className="relative h-20">
+                    <span className="absolute -top-2.5 right-2">
+                      {format(new Date().setHours(hour, 0), 'HH:mm')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Events column */}
+              <div className="relative">
+                {/* Grid lines */}
+                <div className="absolute inset-0 grid grid-rows-24">
+                  {hours.map(hour => (
+                    <div key={hour} className="border-t border-gray-100" />
+                  ))}
+                </div>
+
+                {/* Regular events */}
+                {timed.map(event => (
                   <div
-                    key={eventKey}
+                    key={`${event.id}_${event.calendarId}`}
                     className="absolute left-0 right-0 px-2 rounded overflow-hidden"
                     style={getEventStyle(event)}
                   >
                     <div className="h-full p-1 text-white text-sm overflow-hidden">
                       <div className="font-semibold">{event.summary}</div>
                       <div className="text-xs opacity-90">
-                        {format(parseISO(event.start.dateTime || event.start.date || ''), 'HH:mm')} - 
-                        {format(parseISO(event.end.dateTime || event.end.date || ''), 'HH:mm')}
+                        {format(parseISO(event.start.dateTime || ''), 'HH:mm')}
                       </div>
                     </div>
                   </div>
-                );
-              })}
+                ))}
+              </div>
+            </div>
+            {renderTimeIndicator()}
           </div>
         </div>
       </div>
