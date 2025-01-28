@@ -266,16 +266,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     },
     getEvents: async (timeMin: Date, timeMax: Date): Promise<GoogleCalendarResponse> => {
       if (!user) {
+        console.log('No user found, returning empty events array');
         return { items: [] };
       }
-      
+
       try {
+        const firebaseUser = auth.currentUser;
+        if (!firebaseUser) {
+          console.log('No Firebase user found');
+          return { items: [] };
+        }
+
+        const idToken = await firebaseUser.getIdToken(true);
+        
         const response = await fetch(
-          `/api/calendar/events?timeMin=${timeMin.toISOString()}&timeMax=${timeMax.toISOString()}`
+          `/api/calendar/events?` +
+          `timeMin=${timeMin.toISOString()}&` +
+          `timeMax=${timeMax.toISOString()}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${idToken}`,
+              'Content-Type': 'application/json',
+            }
+          }
         );
         
         if (!response.ok) {
-          throw new Error('Failed to fetch events');
+          throw new Error(`Failed to fetch events: ${response.statusText}`);
         }
         
         const data = await response.json();

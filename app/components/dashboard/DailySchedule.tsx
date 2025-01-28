@@ -4,7 +4,7 @@ import { useApp } from '@/hooks/useApp';
 import { Task, World, CalendarEvent } from '@/app/types';
 import { format, isSameDay, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { getWorldColor } from '@/lib/utils/worldUtils';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface ScheduleItem {
   id: string;
@@ -19,15 +19,18 @@ interface ScheduleItem {
 export default function DailySchedule() {
   const { worlds, todaysPlan, googleCalendar } = useApp();
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const today = new Date();
+  const fetchAttempted = useRef(false);
 
   useEffect(() => {
     const fetchEvents = async () => {
-      if (!googleCalendar) {
-        console.log('No googleCalendar service available');
-        setCalendarEvents([]);
+      if (!googleCalendar || fetchAttempted.current) {
         return;
       }
+      
+      setIsLoading(true);
+      fetchAttempted.current = true;
       
       try {
         const todayStart = startOfDay(today);
@@ -35,12 +38,14 @@ export default function DailySchedule() {
         console.log('Fetching events for range:', { todayStart, todayEnd });
         
         const response = await googleCalendar.getEvents(todayStart, todayEnd);
-        console.log('Calendar events response:', response);
-        
-        setCalendarEvents(response.items);
+        if (response?.items) {
+          setCalendarEvents(response.items);
+        }
       } catch (error) {
         console.error('Error fetching events:', error);
         setCalendarEvents([]);
+      } finally {
+        setIsLoading(false);
       }
     };
     
