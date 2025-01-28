@@ -57,39 +57,54 @@ export default function WorldTimeSettings({ world, onUpdate }: Props) {
     const ranges: TimeRange[] = [];
     const sorted = [...slots].sort((a, b) => a.dayOfWeek - b.dayOfWeek);
     
-    let currentRange: TimeRange | null = null;
+    // קיבוץ לפי זמני התחלה וסיום זהים
+    const timeGroups: { [key: string]: TimeSlot[] } = {};
     
-    for (const slot of sorted) {
-      if (!currentRange) {
-        currentRange = {
-          startDay: slot.dayOfWeek,
-          endDay: slot.dayOfWeek,
-          startTime: slot.startTime,
-          endTime: slot.endTime
-        };
-        continue;
+    sorted.forEach(slot => {
+      const timeKey = `${slot.startTime}-${slot.endTime}`;
+      if (!timeGroups[timeKey]) {
+        timeGroups[timeKey] = [];
       }
+      timeGroups[timeKey].push(slot);
+    });
 
-      if (currentRange.endDay + 1 === slot.dayOfWeek &&
-          currentRange.startTime === slot.startTime &&
-          currentRange.endTime === slot.endTime) {
-        currentRange.endDay = slot.dayOfWeek;
-      } else {
+    // עיבוד כל קבוצת זמנים
+    Object.entries(timeGroups).forEach(([_, groupSlots]) => {
+      let currentRange: TimeRange | null = null;
+      
+      groupSlots.forEach(slot => {
+        if (!currentRange) {
+          currentRange = {
+            startDay: slot.dayOfWeek,
+            endDay: slot.dayOfWeek,
+            startTime: slot.startTime,
+            endTime: slot.endTime
+          };
+          return;
+        }
+
+        // בדיקה אם היום הנוכחי רציף
+        if (slot.dayOfWeek === currentRange.endDay + 1) {
+          currentRange.endDay = slot.dayOfWeek;
+        } else {
+          // אם לא רציף, שומרים את הטווח הנוכחי ומתחילים חדש
+          ranges.push(currentRange);
+          currentRange = {
+            startDay: slot.dayOfWeek,
+            endDay: slot.dayOfWeek,
+            startTime: slot.startTime,
+            endTime: slot.endTime
+          };
+        }
+      });
+
+      // הוספת הטווח האחרון
+      if (currentRange) {
         ranges.push(currentRange);
-        currentRange = {
-          startDay: slot.dayOfWeek,
-          endDay: slot.dayOfWeek,
-          startTime: slot.startTime,
-          endTime: slot.endTime
-        };
       }
-    }
+    });
 
-    if (currentRange) {
-      ranges.push(currentRange);
-    }
-
-    return ranges;
+    return ranges.sort((a, b) => a.startDay - b.startDay);
   }
 
   const handleAddTimeRange = () => {
@@ -119,7 +134,7 @@ export default function WorldTimeSettings({ world, onUpdate }: Props) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold">זמנים קבועים</h3>
         <button 
@@ -137,14 +152,15 @@ export default function WorldTimeSettings({ world, onUpdate }: Props) {
             key={index}
             className="flex items-center justify-between bg-gray-50 p-3 rounded-lg"
           >
-            <div>
+            <div className="flex items-center gap-2">
               <span className="font-medium">{formatDayRange(range)}</span>
-              <span className="mx-2">|</span>
+              <span className="text-gray-500">|</span>
               <span>{range.startTime} - {range.endTime}</span>
             </div>
             <button
               onClick={() => removeTimeRange(index)}
               className="text-red-500 hover:text-red-700"
+              title="הסר"
             >
               ✕
             </button>
@@ -154,7 +170,7 @@ export default function WorldTimeSettings({ world, onUpdate }: Props) {
 
       {/* טופס הוספת טווח זמנים */}
       {isAdding && (
-        <div className="border rounded-lg p-4 space-y-4">
+        <div className="border rounded-lg p-4 space-y-4 bg-gray-50">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">מיום</label>
@@ -222,7 +238,7 @@ export default function WorldTimeSettings({ world, onUpdate }: Props) {
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 mt-4">
+          <div className="flex justify-end gap-2">
             <button
               onClick={() => setIsAdding(false)}
               className="px-4 py-2 text-gray-600 hover:text-gray-800"
