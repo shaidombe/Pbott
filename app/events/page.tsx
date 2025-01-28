@@ -243,7 +243,11 @@ export default function EventsCalendar() {
 
   return (
     <div className="fixed top-16 bottom-0 left-0 right-0 flex">
-      <Sidebar showSidebar={showSidebar} />
+      <Sidebar 
+        showSidebar={showSidebar}
+        currentDate={currentDate}
+        onDateChange={setCurrentDate}
+      />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
