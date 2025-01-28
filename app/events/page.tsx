@@ -37,6 +37,8 @@ export default function EventsCalendar() {
   const authErrorHandled = useRef(false);
   const fetchAttempted = useRef(false);
   const router = useRouter();
+  const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+  const eventsCache = useRef(new Map<string, CalendarEvent[]>());
 
   useEffect(() => {
     console.log('Events page state:', {
@@ -72,19 +74,39 @@ export default function EventsCalendar() {
     });
   }, []);
 
-  // פטצ' אירועים מכל היומנים המחוברים והפעילים
+  // פונקציה לחישוב מפתח הקאש
+  const getCacheKey = (date: Date, viewType: ViewType) => {
+    return `${format(date, 'yyyy-MM')}_${viewType}`;
+  };
+
+  // פונקציה לסינון אירועים של יומנים לא פעילים
+  const filterEventsByActiveCalendars = useCallback((events: CalendarEvent[]) => {
+    const activeCalendarIds = new Set(
+      connectedCalendars
+        .filter(cal => cal.isActive)
+        .map(cal => cal.id)
+    );
+    
+    return events.filter(event => 
+      event.calendarId !== undefined && activeCalendarIds.has(event.calendarId)
+    );
+  }, [connectedCalendars]);
+
   useEffect(() => {
     const fetchCalendarEvents = async () => {
-      if (!connectedCalendars.length || fetchAttempted.current) return;
+      const cacheKey = getCacheKey(currentDate, view);
       
-      fetchAttempted.current = true;
+      // אם יש מידע בקאש, נסנן אותו לפי היומנים הפעילים
+      if (eventsCache.current.has(cacheKey)) {
+        const cachedEvents = eventsCache.current.get(cacheKey) || [];
+        setEvents(filterEventsByActiveCalendars(cachedEvents));
+        return;
+      }
 
+      setIsLoadingEvents(true);
       try {
         const firebaseUser = auth.currentUser;
-        if (!firebaseUser) {
-          console.error('No Firebase user found');
-          return;
-        }
+        if (!firebaseUser) return;
 
         // חישוב טווח התאריכים בהתאם לתצוגה הנוכחית
         let timeMin: Date, timeMax: Date;
@@ -108,13 +130,10 @@ export default function EventsCalendar() {
         }
 
         const idToken = await firebaseUser.getIdToken(true);
-        setEvents([]); // ניקוי אירועים קיימים
-        setFetchError(null);
+        const uniqueEvents = new Map();
 
-        const uniqueEvents = new Map(); // שמירת אירועים ייחודיים
-
-        for (const calendar of connectedCalendars) {
-          if (!calendar.isActive) continue;
+        await Promise.all(connectedCalendars.map(async (calendar) => {
+          if (!calendar.isActive) return;
 
           try {
             const response = await fetch(
@@ -132,37 +151,42 @@ export default function EventsCalendar() {
 
             const responseData = await response.json();
             
-            if (responseData.items?.length) {
-              responseData.items.forEach((event: CalendarEvent) => {
-                const uniqueKey = `${event.id}_${calendar.id}`;
-                uniqueEvents.set(uniqueKey, {
-                  ...event,
-                  calendarId: calendar.id,
-                  calendarColor: calendar.color
-                });
+            responseData.items?.forEach((event: CalendarEvent) => {
+              const uniqueKey = `${event.id}_${calendar.id}`;
+              uniqueEvents.set(uniqueKey, {
+                ...event,
+                calendarId: calendar.id,
+                calendarColor: calendar.color
               });
-            }
+            });
           } catch (error) {
             console.error(`Error fetching events for calendar ${calendar.id}:`, error);
           }
-        }
+        }));
 
-        setEvents(Array.from(uniqueEvents.values()));
-        
+        const newEvents = Array.from(uniqueEvents.values());
+        eventsCache.current.set(cacheKey, newEvents);
+        setEvents(filterEventsByActiveCalendars(newEvents));
       } catch (error) {
         console.error('Error fetching events:', error);
-        setFetchError(error instanceof Error ? error.message : 'Failed to fetch events');
+      } finally {
+        setIsLoadingEvents(false);
       }
     };
 
     if (connectedCalendars.length > 0) {
       fetchCalendarEvents();
     }
+  }, [connectedCalendars, currentDate, view, filterEventsByActiveCalendars]);
 
-    return () => {
-      fetchAttempted.current = false;
-    };
-  }, [connectedCalendars, currentDate, view]);
+  // אפקט נוסף שמגיב לשינויים ביומנים פעילים
+  useEffect(() => {
+    const cacheKey = getCacheKey(currentDate, view);
+    if (eventsCache.current.has(cacheKey)) {
+      const cachedEvents = eventsCache.current.get(cacheKey) || [];
+      setEvents(filterEventsByActiveCalendars(cachedEvents));
+    }
+  }, [connectedCalendars, filterEventsByActiveCalendars, currentDate, view]);
 
   // גלילה לשעה הנוכחית בטעינה ראשונית ובמעבר בין תצוגות
   useEffect(() => {
@@ -325,7 +349,7 @@ export default function EventsCalendar() {
 
         {/* Calendar */}
         <div ref={calendarRef} className="flex-1 overflow-y-auto relative">
-          {isLoading ? (
+          {isLoadingEvents ? (
             <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
             </div>
