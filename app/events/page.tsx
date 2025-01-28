@@ -12,7 +12,8 @@ import {
   startOfMonth,
   endOfMonth,
   startOfDay,
-  endOfDay
+  endOfDay,
+  parseISO
 } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { CalendarEvent } from '@/app/types';
@@ -62,9 +63,13 @@ export default function EventsCalendar() {
     const now = new Date();
     const minutes = now.getHours() * 60 + now.getMinutes();
     const percentage = (minutes / 1440) * 100;
-    const scrollPosition = (percentage / 100) * 1440;
+    const scrollPosition = (percentage / 100) * calendarRef.current.scrollHeight;
     
-    calendarRef.current.scrollTop = scrollPosition - 300; // גלילה קצת מעל השעה הנוכחית
+    // גלילה עם אנימציה חלקה
+    calendarRef.current.scrollTo({
+      top: scrollPosition - calendarRef.current.clientHeight / 2,
+      behavior: 'smooth'
+    });
   }, []);
 
   // פטצ' אירועים מכל היומנים המחוברים והפעילים
@@ -161,27 +166,25 @@ export default function EventsCalendar() {
 
   // גלילה לשעה הנוכחית בטעינה ראשונית ובמעבר בין תצוגות
   useEffect(() => {
-    scrollToCurrentTime();
-  }, [view, scrollToCurrentTime]);
+    if (view === 'month') return; // לא גוללים בתצוגת חודש
+    
+    const timer = setTimeout(() => {
+      scrollToCurrentTime();
+    }, 300); // מחכים קצת שהתצוגה תתייצב
+    
+    return () => clearTimeout(timer);
+  }, [view, currentDate, scrollToCurrentTime]);
 
-  const renderTimeIndicator = () => {
-    const now = new Date();
-    const minutes = now.getHours() * 60 + now.getMinutes();
-    const percentage = (minutes / 1440) * 100;
-
-    return (
-      <div 
-        className="absolute w-full border-t-2 border-red-500 z-50"
-        style={{ top: `${percentage}%` }}
-      >
-        <div className="relative">
-          <span className="absolute -left-12 -top-2.5 text-red-500 text-sm">
-            {format(now, 'HH:mm')}
-          </span>
-        </div>
-      </div>
-    );
-  };
+  // עדכון אוטומטי של השעון כל דקה
+  useEffect(() => {
+    if (view === 'month') return;
+    
+    const interval = setInterval(() => {
+      setCurrentDate(new Date()); // מעדכן את השעה הנוכחית
+    }, 60000); // כל דקה
+    
+    return () => clearInterval(interval);
+  }, [view]);
 
   const goToToday = () => {
     setCurrentDate(new Date());
@@ -331,7 +334,6 @@ export default function EventsCalendar() {
               view={view}
               currentDate={currentDate}
               events={events}
-              renderTimeIndicator={renderTimeIndicator}
             />
           )}
         </div>

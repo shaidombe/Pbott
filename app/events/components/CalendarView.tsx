@@ -2,32 +2,85 @@
 import { format, parseISO, startOfWeek, addDays, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek as startOfWeekFns, endOfWeek, isSameMonth } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { CalendarEvent } from '@/app/types';
-import React from 'react';
+import React, { useRef, useCallback, useEffect } from 'react';
 
 interface CalendarViewProps {
   view: 'day' | 'week' | 'month';
   currentDate: Date;
   events: CalendarEvent[];
-  renderTimeIndicator: () => React.ReactNode;
 }
 
-export default function CalendarView({ view, currentDate, events, renderTimeIndicator }: CalendarViewProps) {
+export default function CalendarView({ view, currentDate, events }: CalendarViewProps) {
   const hours = Array.from({ length: 24 }, (_, i) => i);
+  const containerRef = useRef<HTMLDivElement>(null);
   
+  // פונקציה לגלילה לשעה הנוכחית
+  const scrollToCurrentTime = useCallback(() => {
+    if (!containerRef.current) return;
+    
+    const now = new Date();
+    const currentHour = now.getHours();
+    
+    // נגלול לשעה שעה לפני הזמן הנוכחי
+    const scrollHour = Math.max(currentHour - 1, 0);
+    const scrollPosition = scrollHour * 80; // כל שעה היא 80px
+    
+    containerRef.current.scrollTo({
+      top: scrollPosition,
+      behavior: 'smooth'
+    });
+  }, []);
+
+  // גלילה אוטומטית בטעינה ובשינוי תצוגה
+  useEffect(() => {
+    if (view === 'month') return;
+    
+    const timer = setTimeout(() => {
+      scrollToCurrentTime();
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [view, scrollToCurrentTime]);
+
   const getEventStyle = (event: CalendarEvent) => {
     const startDate = parseISO(event.start.dateTime || event.start.date || '');
     const endDate = parseISO(event.end.dateTime || event.end.date || '');
     
     const duration = (endDate.getTime() - startDate.getTime()) / (1000 * 60);
     const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
-    const height = (duration / 1440) * 100;
-    const top = (startMinutes / 1440) * 100;
+    const height = (duration / (60)) * (100/24);
+    const top = (startMinutes / (60)) * (100/24);
 
     return {
       top: `${top}%`,
       height: `${height}%`,
       backgroundColor: event.calendarColor || event.backgroundColor || '#4285f4',
     };
+  };
+
+  const renderTimeIndicator = () => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    
+    // החישוב מתבצע ישירות בהתאם לגריד
+    const top = `${(hours * 80) + (minutes * 80/60)}px`;
+
+    return (
+      <div 
+        className="absolute w-full border-t-2 border-red-500 z-50 pointer-events-none"
+        style={{ top }}
+      >
+        <div className="relative">
+          <div className="absolute right-0 -top-4 bg-red-500 text-white px-2 py-1 rounded-md shadow-md">
+            <span className="font-medium text-sm">
+              {`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`}
+            </span>
+          </div>
+          <div className="absolute left-0 -top-1 h-2 w-2 bg-red-500 rounded-full" />
+        </div>
+      </div>
+    );
   };
 
   const renderDayView = () => {
@@ -77,7 +130,7 @@ export default function CalendarView({ view, currentDate, events, renderTimeIndi
         )}
 
         {/* Time grid - Scrollable */}
-        <div className="flex-1 overflow-y-auto">
+        <div ref={containerRef} className="flex-1 overflow-y-auto">
           <div className="relative h-[1440px]">
             <div className="absolute inset-0 grid grid-cols-[4rem_1fr] divide-x divide-gray-200">
               {/* Time column */}
