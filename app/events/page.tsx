@@ -34,6 +34,7 @@ export default function EventsCalendar() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
   const authErrorHandled = useRef(false);
+  const fetchAttempted = useRef(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -69,7 +70,9 @@ export default function EventsCalendar() {
   // פטצ' אירועים מכל היומנים המחוברים והפעילים
   useEffect(() => {
     const fetchCalendarEvents = async () => {
-      if (!connectedCalendars.length) return;
+      if (!connectedCalendars.length || fetchAttempted.current) return;
+      
+      fetchAttempted.current = true;
 
       try {
         const firebaseUser = auth.currentUser;
@@ -78,65 +81,69 @@ export default function EventsCalendar() {
           return;
         }
 
-        const idToken = await firebaseUser.getIdToken(true);
-        console.log('Got Firebase token for user:', {
-          uid: firebaseUser.uid,
-          hasToken: !!idToken
-        });
+        // חישוב טווח התאריכים בהתאם לתצוגה הנוכחית
+        let timeMin: Date, timeMax: Date;
+        
+        switch (view) {
+          case 'day':
+            timeMin = startOfDay(currentDate);
+            timeMax = endOfDay(currentDate);
+            break;
+          case 'week':
+            timeMin = startOfWeek(currentDate, { locale: he });
+            timeMax = endOfWeek(currentDate, { locale: he });
+            break;
+          case 'month':
+            timeMin = startOfMonth(currentDate);
+            timeMax = endOfMonth(currentDate);
+            break;
+          default:
+            timeMin = startOfDay(currentDate);
+            timeMax = endOfDay(currentDate);
+        }
 
-        setEvents([]);
+        const idToken = await firebaseUser.getIdToken(true);
+        setEvents([]); // ניקוי אירועים קיימים
         setFetchError(null);
 
-        // הגדרת טווח התאריכים
-        const startTime = new Date();
-        const endTime = new Date();
-        endTime.setDate(endTime.getDate() + 7); // שבוע קדימה
+        const uniqueEvents = new Map(); // שמירת אירועים ייחודיים
 
         for (const calendar of connectedCalendars) {
-          if (!calendar.isActive) {
-            console.log(`Skipping inactive calendar: ${calendar.id}`);
-            continue;
-          }
+          if (!calendar.isActive) continue;
 
-          console.log(`Fetching events for calendar: ${calendar.id}`);
-          
-          const response = await fetch(
-            `/api/calendar/events?` +
-            `calendarId=${encodeURIComponent(calendar.id)}` +
-            `&timeMin=${startTime.toISOString()}` +
-            `&timeMax=${endTime.toISOString()}`,
-            {
-              headers: {
-                'Authorization': `Bearer ${idToken}`,
-                'Content-Type': 'application/json',
+          try {
+            const response = await fetch(
+              `/api/calendar/events?` +
+              `calendarId=${encodeURIComponent(calendar.id)}` +
+              `&timeMin=${timeMin.toISOString()}` +
+              `&timeMax=${timeMax.toISOString()}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${idToken}`,
+                  'Content-Type': 'application/json',
+                }
               }
+            );
+
+            const responseData = await response.json();
+            
+            if (responseData.items?.length) {
+              responseData.items.forEach((event: CalendarEvent) => {
+                const uniqueKey = `${event.id}_${calendar.id}`;
+                uniqueEvents.set(uniqueKey, {
+                  ...event,
+                  calendarId: calendar.id,
+                  calendarColor: calendar.color
+                });
+              });
             }
-          );
-
-          const responseData = await response.json();
-
-          if (!response.ok) {
-            console.error('Calendar API error:', {
-              status: response.status,
-              error: responseData,
-              calendarId: calendar.id
-            });
-            throw new Error(responseData.error || 'Failed to fetch events');
-          }
-
-          console.log('Got calendar events:', {
-            calendarId: calendar.id,
-            eventCount: responseData.items?.length
-          });
-          
-          if (responseData.items?.length) {
-            const eventsWithColor = responseData.items.map((event: CalendarEvent) => ({
-              ...event,
-              calendarColor: calendar.color
-            }));
-            setEvents(prev => [...prev, ...eventsWithColor]);
+          } catch (error) {
+            console.error(`Error fetching events for calendar ${calendar.id}:`, error);
           }
         }
+
+        setEvents(Array.from(uniqueEvents.values()));
+        
       } catch (error) {
         console.error('Error fetching events:', error);
         setFetchError(error instanceof Error ? error.message : 'Failed to fetch events');
@@ -146,7 +153,11 @@ export default function EventsCalendar() {
     if (connectedCalendars.length > 0) {
       fetchCalendarEvents();
     }
-  }, [connectedCalendars]);
+
+    return () => {
+      fetchAttempted.current = false;
+    };
+  }, [connectedCalendars, currentDate, view]);
 
   // גלילה לשעה הנוכחית בטעינה ראשונית ובמעבר בין תצוגות
   useEffect(() => {

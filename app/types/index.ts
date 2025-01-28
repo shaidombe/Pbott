@@ -132,6 +132,7 @@ export const convertPriorityToGoogle = (priority: Task['priority']): GooglePrior
 
 export interface CalendarEvent {
   id: string;
+  calendarId?: string;
   summary: string;
   description?: string;
   start: {

@@ -64,10 +64,10 @@ export default function CalendarView({ view, currentDate, events, renderTimeIndi
               })
               .map(event => {
                 const eventDate = parseISO(event.start.dateTime || event.start.date || '');
-                const uniqueKey = `${event.id}_${format(eventDate, 'yyyyMMdd')}`;
+                const eventKey = `${event.id}_${event.calendarId || 'default'}_${format(eventDate, 'yyyyMMdd')}`;
                 return (
                   <div
-                    key={uniqueKey}
+                    key={eventKey}
                     className="absolute left-0 right-0 px-2 rounded overflow-hidden"
                     style={getEventStyle(event)}
                   >
@@ -142,10 +142,10 @@ export default function CalendarView({ view, currentDate, events, renderTimeIndi
                   {allDay.length > 0 && (
                     <div className="border-b border-gray-100 bg-white shadow-sm">
                       {allDay.map(event => {
-                        const uniqueKey = `${event.id}_${format(day, 'yyyyMMdd')}`;
+                        const eventKey = `${event.id}_${event.calendarId || 'default'}_${format(day, 'yyyyMMdd')}`;
                         return (
                           <div
-                            key={uniqueKey}
+                            key={eventKey}
                             className="px-1 py-0.5 mx-0.5 my-1 text-xs bg-primary-100 text-primary-800 rounded-sm truncate hover:bg-primary-200 transition-colors"
                             title={event.summary}
                           >
@@ -168,10 +168,10 @@ export default function CalendarView({ view, currentDate, events, renderTimeIndi
 
                 {/* אירועים רגילים */}
                 {timed.map(event => {
-                  const uniqueKey = `${event.id}_${format(day, 'yyyyMMdd')}`;
+                  const eventKey = `${event.id}_${event.calendarId || 'default'}_${format(day, 'yyyyMMdd')}`;
                   return (
                     <div
-                      key={uniqueKey}
+                      key={eventKey}
                       className="absolute left-0 right-0 px-2 rounded overflow-hidden"
                       style={{
                         ...getEventStyle(event),
@@ -253,11 +253,11 @@ export default function CalendarView({ view, currentDate, events, renderTimeIndi
                       {dayEvents.map((event, index) => {
                         const startTime = parseISO(event.start.dateTime || event.start.date || '');
                         const isAllDay = !event.start.dateTime;
-                        const uniqueKey = `${event.id}_${format(startTime, 'yyyyMMdd')}`;
+                        const eventKey = `${event.id}_${event.calendarId || 'default'}_${format(startTime, 'yyyyMMdd')}`;
                         
                         return (
                           <div
-                            key={uniqueKey}
+                            key={eventKey}
                             className={`text-xs rounded-lg overflow-hidden ${
                               isAllDay ? 'bg-opacity-20' : 'hover:bg-opacity-90'
                             }`}
