@@ -91,105 +91,99 @@ export default function CalendarView({ view, currentDate, events, renderTimeIndi
     const weekStart = startOfWeek(currentDate, { locale: he });
     const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
-    const splitEvents = (day: Date) => {
-      return events
-        .filter(event => {
-          const eventDate = parseISO(event.start.dateTime || event.start.date || '');
-          return isSameDay(eventDate, day);
-        })
-        .reduce((acc, event) => {
-          const isAllDay = !event.start.dateTime;
-          if (isAllDay) {
-            acc.allDay.push(event);
-          } else {
-            acc.timed.push(event);
-          }
-          return acc;
-        }, { allDay: [], timed: [] } as { allDay: CalendarEvent[], timed: CalendarEvent[] });
-    };
-
     return (
-      <div className="relative h-[1440px]">
-        <div className="absolute inset-0 grid grid-cols-[4rem_repeat(7,1fr)] divide-x divide-gray-200">
-          {/* עמודת שעות */}
-          <div className="grid grid-rows-24 text-sm text-gray-500">
-            {hours.map(hour => (
-              <div key={hour} className="relative h-20">
-                <span className="absolute -top-2.5 right-2">
-                  {format(new Date().setHours(hour, 0), 'HH:mm')}
-                </span>
+      <div className="flex flex-col h-full">
+        {/* Header Section - Fixed */}
+        <div className="grid grid-cols-[4rem_repeat(7,1fr)] border-b">
+          {/* Empty cell for time column */}
+          <div className="border-r" />
+          
+          {/* Days row */}
+          {weekDays.map(day => (
+            <div key={format(day, 'yyyy-MM-dd')} className="border-r p-2 text-center">
+              <div>{format(day, 'EEEE', { locale: he })}</div>
+              <div className="text-sm text-gray-500">
+                {format(day, 'd MMM', { locale: he })}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
+        </div>
 
-          {/* ימי השבוע */}
+        {/* All-day events row */}
+        <div className="grid grid-cols-[4rem_repeat(7,1fr)] border-b bg-gray-50">
+          <div className="border-r text-sm p-2 text-gray-500">יום מלא</div>
           {weekDays.map(day => {
-            const { allDay, timed } = splitEvents(day);
-            
+            const dayEvents = events.filter(event => {
+              const eventDate = parseISO(event.start.dateTime || event.start.date || '');
+              return isSameDay(eventDate, day) && !event.start.dateTime;
+            });
+
             return (
-              <div key={format(day, 'yyyy-MM-dd')} className="relative">
-                {/* כותרת היום ואירועים ליום מלא - sticky */}
-                <div className="sticky top-0 z-10 bg-white">
-                  {/* כותרת היום */}
-                  <div className="border-b p-2 text-center">
-                    {format(day, 'EEEE', { locale: he })}
-                    <div className="text-sm text-gray-500">
-                      {format(day, 'd MMM', { locale: he })}
-                    </div>
+              <div key={format(day, 'yyyy-MM-dd')} className="border-r p-1">
+                {dayEvents.map(event => (
+                  <div
+                    key={`${event.id}_${event.calendarId}`}
+                    className="px-1 py-0.5 mb-1 text-xs bg-primary-100 text-primary-800 rounded-sm truncate hover:bg-primary-200 transition-colors cursor-pointer"
+                    title={event.summary}
+                  >
+                    {event.summary}
                   </div>
-
-                  {/* אירועים ליום מלא */}
-                  {allDay.length > 0 && (
-                    <div className="border-b border-gray-100 bg-white shadow-sm">
-                      {allDay.map(event => {
-                        const eventKey = `${event.id}_${event.calendarId || 'default'}_${format(day, 'yyyyMMdd')}`;
-                        return (
-                          <div
-                            key={eventKey}
-                            className="px-1 py-0.5 mx-0.5 my-1 text-xs bg-primary-100 text-primary-800 rounded-sm truncate hover:bg-primary-200 transition-colors"
-                            title={event.summary}
-                          >
-                            {event.summary}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* קווי רשת */}
-                <div className="absolute inset-0 grid grid-rows-24 pointer-events-none" style={{
-                  top: allDay.length > 0 ? 'calc(3.5rem + 1px)' : 'calc(2.5rem + 1px)'
-                }}>
-                  {hours.map(hour => (
-                    <div key={hour} className="border-t border-gray-100" />
-                  ))}
-                </div>
-
-                {/* אירועים רגילים */}
-                {timed.map(event => {
-                  const eventKey = `${event.id}_${event.calendarId || 'default'}_${format(day, 'yyyyMMdd')}`;
-                  return (
-                    <div
-                      key={eventKey}
-                      className="absolute left-0 right-0 px-2 rounded overflow-hidden"
-                      style={{
-                        ...getEventStyle(event),
-                        top: `calc(${getEventStyle(event).top} + ${allDay.length > 0 ? '3.5rem' : '2.5rem'})`
-                      }}
-                    >
-                      <div className="h-full p-1 text-white text-sm overflow-hidden">
-                        <div className="font-semibold">{event.summary}</div>
-                        <div className="text-xs opacity-90">
-                          {format(parseISO(event.start.dateTime || ''), 'HH:mm')}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                ))}
               </div>
             );
           })}
+        </div>
+
+        {/* Time grid - Scrollable */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="relative h-[1440px]">
+            <div className="absolute inset-0 grid grid-cols-[4rem_repeat(7,1fr)] divide-x divide-gray-200">
+              {/* Time column */}
+              <div className="grid grid-rows-24 text-sm text-gray-500">
+                {hours.map(hour => (
+                  <div key={hour} className="relative h-20">
+                    <span className="absolute -top-2.5 right-2">
+                      {format(new Date().setHours(hour, 0), 'HH:mm')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Days columns with events */}
+              {weekDays.map(day => (
+                <div key={format(day, 'yyyy-MM-dd')} className="relative">
+                  {/* Grid lines */}
+                  <div className="absolute inset-0 grid grid-rows-24">
+                    {hours.map(hour => (
+                      <div key={hour} className="border-t border-gray-100" />
+                    ))}
+                  </div>
+
+                  {/* Regular events */}
+                  {events
+                    .filter(event => {
+                      const eventDate = parseISO(event.start.dateTime || event.start.date || '');
+                      return isSameDay(eventDate, day) && event.start.dateTime;
+                    })
+                    .map(event => (
+                      <div
+                        key={`${event.id}_${event.calendarId}`}
+                        className="absolute left-0 right-0 px-2 rounded overflow-hidden"
+                        style={getEventStyle(event)}
+                      >
+                        <div className="h-full p-1 text-white text-sm overflow-hidden">
+                          <div className="font-semibold">{event.summary}</div>
+                          <div className="text-xs opacity-90">
+                            {format(parseISO(event.start.dateTime || ''), 'HH:mm')}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              ))}
+            </div>
+            {renderTimeIndicator()}
+          </div>
         </div>
       </div>
     );
