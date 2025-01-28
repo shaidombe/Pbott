@@ -63,8 +63,8 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
     const hours = now.getHours();
     const minutes = now.getMinutes();
     
-    // החישוב מתבצע ישירות בהתאם לגריד
-    const top = `${(hours * 80) + (minutes * 80/60)}px`;
+    // החישוב מתבצע לפי 50px לכל שעה
+    const top = `${(hours * 50) + (minutes * 50/60)}px`;
 
     return (
       <div 
@@ -72,8 +72,8 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
         style={{ top }}
       >
         <div className="relative">
-          <div className="absolute right-0 -top-4 bg-red-500 text-white px-2 py-1 rounded-md shadow-md">
-            <span className="font-medium text-sm">
+          <div className="absolute right-0 -top-3 bg-red-500 text-white px-2 py-0.5 rounded-md shadow-md">
+            <span className="font-medium text-xs">
               {`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`}
             </span>
           </div>
@@ -113,7 +113,7 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
 
         {/* All-day events section */}
         {allDay.length > 0 && (
-          <div className="grid grid-cols-[4rem_1fr] border-b bg-gray-50">
+          <div className="grid grid-cols-[3rem_1fr] border-b bg-gray-50">
             <div className="border-r text-sm p-2 text-gray-500">יום מלא</div>
             <div className="p-1">
               {allDay.map(event => (
@@ -130,14 +130,14 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
         )}
 
         {/* Time grid - Scrollable */}
-        <div ref={containerRef} className="flex-1 overflow-y-auto">
-          <div className="relative h-[1440px]">
-            <div className="absolute inset-0 grid grid-cols-[4rem_1fr] divide-x divide-gray-200">
+        <div className="flex-1 overflow-y-auto">
+          <div className="relative h-[1200px]">
+            <div className="absolute inset-0 grid grid-cols-[3rem_1fr] divide-x divide-gray-200">
               {/* Time column */}
               <div className="grid grid-rows-24 text-sm text-gray-500">
                 {hours.map(hour => (
-                  <div key={hour} className="relative h-20">
-                    <span className="absolute -top-2.5 right-2">
+                  <div key={hour} className="relative h-[50px]">
+                    <span className="absolute -top-2.5 right-2 text-xs">
                       {format(new Date().setHours(hour, 0), 'HH:mm')}
                     </span>
                   </div>
@@ -145,29 +145,26 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
               </div>
 
               {/* Events column */}
-              <div className="relative">
+              <div className="relative grid grid-rows-24">
                 {/* Grid lines */}
-                <div className="absolute inset-0 grid grid-rows-24">
-                  {hours.map(hour => (
-                    <div key={hour} className="border-t border-gray-100" />
-                  ))}
-                </div>
-
-                {/* Regular events */}
-                {timed.map(event => (
-                  <div
-                    key={`${event.id}_${event.calendarId}`}
-                    className="absolute left-0 right-0 px-2 rounded overflow-hidden"
-                    style={getEventStyle(event)}
-                  >
-                    <div className="h-full p-1 text-white text-sm overflow-hidden">
-                      <div className="font-semibold">{event.summary}</div>
-                      <div className="text-xs opacity-90">
-                        {format(parseISO(event.start.dateTime || ''), 'HH:mm')}
-                      </div>
-                    </div>
-                  </div>
+                {hours.map(hour => (
+                  <div key={hour} className="border-b border-gray-100" />
                 ))}
+                
+                {/* Events */}
+                {timed.map(event => {
+                  const style = getEventStyle(event);
+                  return (
+                    <div
+                      key={`${event.id}_${event.calendarId}`}
+                      className="absolute left-0 right-1 p-1 rounded text-xs text-white overflow-hidden cursor-pointer hover:opacity-90"
+                      style={style}
+                      title={event.summary}
+                    >
+                      {event.summary}
+                    </div>
+                  );
+                })}
               </div>
             </div>
             {renderTimeIndicator()}
@@ -178,101 +175,98 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
   };
 
   const renderWeekView = () => {
-    const weekStart = startOfWeek(currentDate, { locale: he });
-    const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    const startOfWeekDate = startOfWeek(currentDate, { locale: he });
+    const endOfWeekDate = endOfWeek(currentDate, { locale: he });
+    const weekDays = eachDayOfInterval({ start: startOfWeekDate, end: endOfWeekDate });
 
     return (
       <div className="flex flex-col h-full">
-        {/* Header Section - Fixed */}
-        <div className="grid grid-cols-[4rem_repeat(7,1fr)] border-b">
-          {/* Empty cell for time column */}
-          <div className="border-r" />
-          
-          {/* Days row */}
+        {/* Header - ימי השבוע */}
+        <div className="grid grid-cols-[3rem_repeat(7,1fr)] border-b bg-white text-sm">
+          <div className="p-2" />
           {weekDays.map(day => (
-            <div key={format(day, 'yyyy-MM-dd')} className="border-r p-2 text-center">
-              <div>{format(day, 'EEEE', { locale: he })}</div>
-              <div className="text-sm text-gray-500">
-                {format(day, 'd MMM', { locale: he })}
+            <div key={day.toISOString()} className="p-2 text-center">
+              <div className="font-medium text-xs">
+                {format(day, 'EEEE', { locale: he })}
+              </div>
+              <div className={`text-xs ${
+                isSameDay(day, new Date()) ? 'text-primary-600 font-bold' : 'text-gray-500'
+              }`}>
+                {format(day, 'd בMMMM', { locale: he })}
               </div>
             </div>
           ))}
         </div>
 
-        {/* All-day events row */}
-        <div className="grid grid-cols-[4rem_repeat(7,1fr)] border-b bg-gray-50">
-          <div className="border-r text-sm p-2 text-gray-500">יום מלא</div>
-          {weekDays.map(day => {
-            const dayEvents = events.filter(event => {
-              const eventDate = parseISO(event.start.dateTime || event.start.date || '');
-              return isSameDay(eventDate, day) && !event.start.dateTime;
-            });
-
-            return (
-              <div key={format(day, 'yyyy-MM-dd')} className="border-r p-1">
-                {dayEvents.map(event => (
+        {/* All-day events section */}
+        <div className="grid grid-cols-[3rem_repeat(7,1fr)] border-b bg-gray-50">
+          <div className="border-r text-xs p-2 text-gray-500">יום מלא</div>
+          {weekDays.map(day => (
+            <div key={day.toISOString()} className="p-1 border-r">
+              {events
+                .filter(event => {
+                  const eventDate = parseISO(event.start.dateTime || event.start.date || '');
+                  return isSameDay(eventDate, day) && !event.start.dateTime;
+                })
+                .map(event => (
                   <div
                     key={`${event.id}_${event.calendarId}`}
-                    className="px-1 py-0.5 mb-1 text-xs bg-primary-100 text-primary-800 rounded-sm truncate hover:bg-primary-200 transition-colors cursor-pointer"
+                    className="px-1 py-0.5 mb-0.5 text-xs bg-primary-100 text-primary-800 rounded-sm truncate hover:bg-primary-200 transition-colors cursor-pointer"
                     title={event.summary}
                   >
                     {event.summary}
                   </div>
                 ))}
-              </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
 
-        {/* Time grid - Scrollable */}
+        {/* Time grid */}
         <div className="flex-1 overflow-y-auto">
-          <div className="relative h-[1440px]">
-            <div className="absolute inset-0 grid grid-cols-[4rem_repeat(7,1fr)] divide-x divide-gray-200">
+          <div className="relative h-[1200px]">
+            <div className="absolute inset-0 grid grid-cols-[3rem_repeat(7,1fr)] divide-x divide-gray-200">
               {/* Time column */}
               <div className="grid grid-rows-24 text-sm text-gray-500">
                 {hours.map(hour => (
-                  <div key={hour} className="relative h-20">
-                    <span className="absolute -top-2.5 right-2">
+                  <div key={hour} className="relative h-[50px]">
+                    <span className="absolute -top-2.5 right-2 text-xs">
                       {format(new Date().setHours(hour, 0), 'HH:mm')}
                     </span>
                   </div>
                 ))}
               </div>
 
-              {/* Days columns with events */}
+              {/* Days columns */}
               {weekDays.map(day => (
-                <div key={format(day, 'yyyy-MM-dd')} className="relative">
+                <div key={day.toISOString()} className="relative grid grid-rows-24">
                   {/* Grid lines */}
-                  <div className="absolute inset-0 grid grid-rows-24">
-                    {hours.map(hour => (
-                      <div key={hour} className="border-t border-gray-100" />
-                    ))}
-                  </div>
+                  {hours.map(hour => (
+                    <div key={hour} className="border-b border-gray-100" />
+                  ))}
 
-                  {/* Regular events */}
+                  {/* Timed events */}
                   {events
                     .filter(event => {
                       const eventDate = parseISO(event.start.dateTime || event.start.date || '');
                       return isSameDay(eventDate, day) && event.start.dateTime;
                     })
-                    .map(event => (
-                      <div
-                        key={`${event.id}_${event.calendarId}`}
-                        className="absolute left-0 right-0 px-2 rounded overflow-hidden"
-                        style={getEventStyle(event)}
-                      >
-                        <div className="h-full p-1 text-white text-sm overflow-hidden">
-                          <div className="font-semibold">{event.summary}</div>
-                          <div className="text-xs opacity-90">
-                            {format(parseISO(event.start.dateTime || ''), 'HH:mm')}
-                          </div>
+                    .map(event => {
+                      const style = getEventStyle(event);
+                      return (
+                        <div
+                          key={`${event.id}_${event.calendarId}`}
+                          className="absolute left-0 right-1 p-1 rounded text-xs text-white overflow-hidden cursor-pointer hover:opacity-90"
+                          style={style}
+                          title={event.summary}
+                        >
+                          {event.summary}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                 </div>
               ))}
+              {renderTimeIndicator()}
             </div>
-            {renderTimeIndicator()}
           </div>
         </div>
       </div>
