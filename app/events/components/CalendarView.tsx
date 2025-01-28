@@ -178,6 +178,7 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
     const startOfWeekDate = startOfWeek(currentDate, { locale: he });
     const endOfWeekDate = endOfWeek(currentDate, { locale: he });
     const weekDays = eachDayOfInterval({ start: startOfWeekDate, end: endOfWeekDate });
+    const today = new Date();
 
     return (
       <div className="flex flex-col h-full">
@@ -185,12 +186,17 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
         <div className="grid grid-cols-[3rem_repeat(7,1fr)] border-b bg-white text-sm">
           <div className="p-2" />
           {weekDays.map(day => (
-            <div key={day.toISOString()} className="p-2 text-center">
+            <div 
+              key={day.toISOString()} 
+              className={`p-2 text-center ${
+                isSameDay(day, today) ? 'bg-gray-100/80' : ''
+              }`}
+            >
               <div className="font-medium text-xs">
                 {format(day, 'EEEE', { locale: he })}
               </div>
               <div className={`text-xs ${
-                isSameDay(day, new Date()) ? 'text-primary-600 font-bold' : 'text-gray-500'
+                isSameDay(day, today) ? 'text-primary-600 font-bold' : 'text-gray-500'
               }`}>
                 {format(day, 'd בMMMM', { locale: he })}
               </div>
@@ -202,7 +208,12 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
         <div className="grid grid-cols-[3rem_repeat(7,1fr)] border-b bg-gray-50">
           <div className="border-r text-xs p-2 text-gray-500">יום מלא</div>
           {weekDays.map(day => (
-            <div key={day.toISOString()} className="p-1 border-r">
+            <div 
+              key={day.toISOString()} 
+              className={`p-1 border-r ${
+                isSameDay(day, today) ? 'bg-gray-100/80' : ''
+              }`}
+            >
               {events
                 .filter(event => {
                   const eventDate = parseISO(event.start.dateTime || event.start.date || '');
@@ -238,7 +249,12 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
 
               {/* Days columns */}
               {weekDays.map(day => (
-                <div key={day.toISOString()} className="relative grid grid-rows-24">
+                <div 
+                  key={day.toISOString()} 
+                  className={`relative grid grid-rows-24 ${
+                    isSameDay(day, today) ? 'bg-gray-100/80' : ''
+                  }`}
+                >
                   {/* Grid lines */}
                   {hours.map(hour => (
                     <div key={hour} className="border-b border-gray-100" />
