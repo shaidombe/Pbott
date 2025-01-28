@@ -1,5 +1,5 @@
 'use client';
-import { format, parseISO, startOfWeek, addDays, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek as startOfWeekFns, endOfWeek, isSameMonth } from 'date-fns';
+import { format, parseISO, startOfWeek, addDays, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek as startOfWeekFns, endOfWeek, isSameMonth, startOfDay } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { CalendarEvent } from '@/app/types';
 import React, { useRef, useCallback, useEffect } from 'react';
@@ -45,16 +45,20 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
   const getEventStyle = (event: CalendarEvent) => {
     const startDate = parseISO(event.start.dateTime || event.start.date || '');
     const endDate = parseISO(event.end.dateTime || event.end.date || '');
+    const isPast = endDate < new Date();
     
     const duration = (endDate.getTime() - startDate.getTime()) / (1000 * 60);
     const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
-    const height = (duration / (60)) * (100/24);
-    const top = (startMinutes / (60)) * (100/24);
+    
+    // מחשבים את הגובה עם מרווח קטן
+    const height = (duration / 60) * (100/24) * 0.95; // הקטנו ל-95% מהגובה המקורי
+    const top = (startMinutes / 60) * (100/24);
 
     return {
       top: `${top}%`,
       height: `${height}%`,
       backgroundColor: event.calendarColor || event.backgroundColor || '#4285f4',
+      opacity: isPast ? '0.5' : '1',
     };
   };
 
@@ -79,6 +83,23 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
           </div>
           <div className="absolute left-0 -top-1 h-2 w-2 bg-red-500 rounded-full" />
         </div>
+      </div>
+    );
+  };
+
+  const renderEventContent = (event: CalendarEvent) => {
+    const startDate = parseISO(event.start.dateTime || event.start.date || '');
+    const endDate = parseISO(event.end.dateTime || event.end.date || '');
+    const isPast = endDate < new Date();
+    
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <span className={`font-medium truncate min-w-[50px] flex-1 ${isPast ? 'opacity-50' : ''}`}>
+          {event.summary}
+        </span>
+        <span className={`text-[10px] text-white/70 shrink-0 ${isPast ? 'opacity-40' : ''}`}>
+          {format(startDate, 'HH:mm')}-{format(endDate, 'HH:mm')}
+        </span>
       </div>
     );
   };
@@ -157,11 +178,11 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
                   return (
                     <div
                       key={`${event.id}_${event.calendarId}`}
-                      className="absolute left-0 right-1 p-1 rounded text-xs text-white overflow-hidden cursor-pointer hover:opacity-90"
+                      className="absolute left-0 right-1 p-1.5 mb-1 rounded text-xs text-white overflow-hidden cursor-pointer hover:opacity-90"
                       style={style}
-                      title={event.summary}
+                      title={`${event.summary}\n${format(parseISO(event.start.dateTime || ''), 'HH:mm')} - ${format(parseISO(event.end.dateTime || ''), 'HH:mm')}`}
                     >
-                      {event.summary}
+                      {renderEventContent(event)}
                     </div>
                   );
                 })}
@@ -271,11 +292,11 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
                       return (
                         <div
                           key={`${event.id}_${event.calendarId}`}
-                          className="absolute left-0 right-1 p-1 rounded text-xs text-white overflow-hidden cursor-pointer hover:opacity-90"
+                          className="absolute left-0 right-1 p-1.5 mb-1 rounded text-xs text-white overflow-hidden cursor-pointer hover:opacity-90"
                           style={style}
-                          title={event.summary}
+                          title={`${event.summary}\n${format(parseISO(event.start.dateTime || ''), 'HH:mm')} - ${format(parseISO(event.end.dateTime || ''), 'HH:mm')}`}
                         >
-                          {event.summary}
+                          {renderEventContent(event)}
                         </div>
                       );
                     })}
@@ -326,12 +347,14 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
                   return isSameDay(eventDate, day);
                 });
 
+                const isPastDay = day < startOfDay(new Date());
+
                 return (
                   <div
                     key={format(day, 'yyyy-MM-dd')}
                     className={`relative border-b border-r h-full min-h-[120px] ${
                       isCurrentMonth ? 'bg-white' : 'bg-gray-50'
-                    }`}
+                    } ${isPastDay ? 'opacity-50' : ''}`}
                   >
                     {/* Date Number */}
                     <div className={`absolute top-1 right-1 flex items-center justify-center ${
@@ -352,23 +375,24 @@ export default function CalendarView({ view, currentDate, events }: CalendarView
                         return (
                           <div
                             key={eventKey}
-                            className={`text-xs rounded-lg overflow-hidden ${
+                            className={`text-xs rounded-lg overflow-hidden mb-1 ${
                               isAllDay ? 'bg-opacity-20' : 'hover:bg-opacity-90'
                             }`}
                             style={{ 
                               backgroundColor: event.calendarColor || event.backgroundColor || '#4285f4',
-                              color: isAllDay ? 'inherit' : 'white'
+                              color: isAllDay ? 'inherit' : 'white',
+                              opacity: isPastDay ? '0.5' : '1'
                             }}
                           >
-                            <div className="px-2 py-1 truncate">
-                              {!isAllDay && (
-                                <span className="inline-block ml-1">
-                                  {format(startTime, 'HH:mm')}
+                            <div className="px-2 py-1">
+                              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                                <span className={`font-medium truncate min-w-[50px] flex-1 ${isPastDay ? 'opacity-50' : ''}`}>
+                                  {event.summary}
                                 </span>
-                              )}
-                              <span className="font-medium">
-                                {event.summary}
-                              </span>
+                                <span className={`text-[10px] text-white/70 shrink-0 ${isPastDay ? 'opacity-40' : ''}`}>
+                                  {format(startTime, 'HH:mm')}-{format(parseISO(event.end.dateTime || ''), 'HH:mm')}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         );

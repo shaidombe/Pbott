@@ -38,7 +38,8 @@ export default function EventsCalendar() {
   const fetchAttempted = useRef(false);
   const router = useRouter();
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
-  const eventsCache = useRef(new Map<string, CalendarEvent[]>());
+  const eventsCache = useRef(new Map<string, CalendarEvent>());
+  const lastFetchedRange = useRef<{ start: Date; end: Date } | null>(null);
 
   useEffect(() => {
     console.log('Events page state:', {
@@ -92,14 +93,50 @@ export default function EventsCalendar() {
     );
   }, [connectedCalendars]);
 
+  const getDateRange = (date: Date, viewType: ViewType) => {
+    switch (viewType) {
+      case 'day':
+        return {
+          start: startOfDay(date),
+          end: endOfDay(date)
+        };
+      case 'week':
+        return {
+          start: startOfWeek(date, { locale: he }),
+          end: endOfWeek(date, { locale: he })
+        };
+      case 'month':
+        return {
+          start: startOfMonth(date),
+          end: endOfMonth(date)
+        };
+    }
+  };
+
+  const isDateRangeWithinCached = (start: Date, end: Date) => {
+    if (!lastFetchedRange.current) return false;
+    
+    return (
+      start >= lastFetchedRange.current.start &&
+      end <= lastFetchedRange.current.end
+    );
+  };
+
   useEffect(() => {
     const fetchCalendarEvents = async () => {
-      const cacheKey = getCacheKey(currentDate, view);
+      const dateRange = getDateRange(currentDate, view);
       
-      // אם יש מידע בקאש, נסנן אותו לפי היומנים הפעילים
-      if (eventsCache.current.has(cacheKey)) {
-        const cachedEvents = eventsCache.current.get(cacheKey) || [];
-        setEvents(filterEventsByActiveCalendars(cachedEvents));
+      // בדיקה אם הטווח המבוקש כבר נמצא במטמון
+      if (isDateRangeWithinCached(dateRange.start, dateRange.end)) {
+        // המרת המטמון למערך של אירועים
+        const cachedEvents = Array.from(eventsCache.current.values());
+        const filteredEvents = cachedEvents.filter(event => {
+          const eventStart = parseISO(event.start.dateTime || event.start.date || '');
+          const eventEnd = parseISO(event.end.dateTime || event.end.date || '');
+          return eventStart >= dateRange.start && eventEnd <= dateRange.end;
+        });
+        
+        setEvents(filterEventsByActiveCalendars(filteredEvents));
         return;
       }
 
@@ -108,29 +145,13 @@ export default function EventsCalendar() {
         const firebaseUser = auth.currentUser;
         if (!firebaseUser) return;
 
-        // חישוב טווח התאריכים בהתאם לתצוגה הנוכחית
-        let timeMin: Date, timeMax: Date;
-        
-        switch (view) {
-          case 'day':
-            timeMin = startOfDay(currentDate);
-            timeMax = endOfDay(currentDate);
-            break;
-          case 'week':
-            timeMin = startOfWeek(currentDate, { locale: he });
-            timeMax = endOfWeek(currentDate, { locale: he });
-            break;
-          case 'month':
-            timeMin = startOfMonth(currentDate);
-            timeMax = endOfMonth(currentDate);
-            break;
-          default:
-            timeMin = startOfDay(currentDate);
-            timeMax = endOfDay(currentDate);
-        }
+        const fetchRange = {
+          start: startOfWeek(dateRange.start, { locale: he }),
+          end: endOfWeek(dateRange.end, { locale: he })
+        };
 
         const idToken = await firebaseUser.getIdToken(true);
-        const uniqueEvents = new Map();
+        const uniqueEvents = new Map<string, CalendarEvent>();
 
         await Promise.all(connectedCalendars.map(async (calendar) => {
           if (!calendar.isActive) return;
@@ -139,8 +160,8 @@ export default function EventsCalendar() {
             const response = await fetch(
               `/api/calendar/events?` +
               `calendarId=${encodeURIComponent(calendar.id)}` +
-              `&timeMin=${timeMin.toISOString()}` +
-              `&timeMax=${timeMax.toISOString()}`,
+              `&timeMin=${fetchRange.start.toISOString()}` +
+              `&timeMax=${fetchRange.end.toISOString()}`,
               {
                 headers: {
                   'Authorization': `Bearer ${idToken}`,
@@ -164,9 +185,19 @@ export default function EventsCalendar() {
           }
         }));
 
+        // שמירה במטמון
+        eventsCache.current = uniqueEvents;
+        lastFetchedRange.current = fetchRange;
+
+        // המרה למערך וסינון
         const newEvents = Array.from(uniqueEvents.values());
-        eventsCache.current.set(cacheKey, newEvents);
-        setEvents(filterEventsByActiveCalendars(newEvents));
+        const filteredEvents = newEvents.filter(event => {
+          const eventStart = parseISO(event.start.dateTime || event.start.date || '');
+          const eventEnd = parseISO(event.end.dateTime || event.end.date || '');
+          return eventStart >= dateRange.start && eventEnd <= dateRange.end;
+        });
+
+        setEvents(filterEventsByActiveCalendars(filteredEvents));
       } catch (error) {
         console.error('Error fetching events:', error);
       } finally {
@@ -183,7 +214,7 @@ export default function EventsCalendar() {
   useEffect(() => {
     const cacheKey = getCacheKey(currentDate, view);
     if (eventsCache.current.has(cacheKey)) {
-      const cachedEvents = eventsCache.current.get(cacheKey) || [];
+      const cachedEvents = Array.from(eventsCache.current.values());
       setEvents(filterEventsByActiveCalendars(cachedEvents));
     }
   }, [connectedCalendars, filterEventsByActiveCalendars, currentDate, view]);
