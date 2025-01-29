@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Task, World } from '@/app/types';
 import AddTaskForm from './AddTaskForm';
 import { PencilIcon } from '@heroicons/react/24/outline';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { useApp } from '@/lib/hooks/useApp';
 import { WorldCategory } from '@/app/types';
@@ -58,12 +58,71 @@ export default function TaskList({ worldId, goalId, tasks, onUpdate }: TaskListP
     
     const taskRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${goalId}/tasks/${task.id}`);
     const newStatus = task.status === 'COMPLETED' ? 'PENDING' : 'COMPLETED';
+    const now = new Date();
     
     try {
+      // עדכון סטטוס המשימה
       await updateDoc(taskRef, {
         status: newStatus,
-        updatedAt: new Date().toISOString()
+        updatedAt: now.toISOString(),
+        ...(newStatus === 'COMPLETED' ? {
+          actualStart: task.actualStart || now.toISOString(),
+          actualEnd: now.toISOString()
+        } : {
+          actualStart: null,
+          actualEnd: null
+        })
       });
+
+      // קבלת כל המשימות של העולם
+      const allTasks: Task[] = [];
+      const goalsRef = collection(db, `users/${user.id}/worlds/${worldId}/goals`);
+      const goalsSnapshot = await getDocs(goalsRef);
+      
+      for (const goalDoc of goalsSnapshot.docs) {
+        const tasksRef = collection(db, `users/${user.id}/worlds/${worldId}/goals/${goalDoc.id}/tasks`);
+        const tasksSnapshot = await getDocs(tasksRef);
+        const goalTasks = tasksSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Task[];
+        allTasks.push(...goalTasks);
+      }
+
+      // עדכון סטטיסטיקות העולם
+      const worldRef = doc(db, `users/${user.id}/worlds/${worldId}`);
+      const worldDoc = await getDoc(worldRef);
+      const worldData = worldDoc.data();
+      
+      if (worldData) {
+        const currentStats = worldData.stats || {
+          totalGoals: 0,
+          completedGoals: 0,
+          totalTasks: 0,
+          completedTasks: 0,
+          timeInvested: 0
+        };
+
+        let timeInvested = currentStats.timeInvested || 0;
+        if (newStatus === 'COMPLETED' && task.estimatedDuration) {
+          timeInvested += task.estimatedDuration;
+        } else if (newStatus === 'PENDING' && task.estimatedDuration) {
+          timeInvested = Math.max(0, timeInvested - task.estimatedDuration);
+        }
+
+        const newStats = {
+          totalGoals: currentStats.totalGoals || 0,
+          completedGoals: currentStats.completedGoals || 0,
+          totalTasks: allTasks.length,  // סך כל המשימות
+          completedTasks: allTasks.filter(t => t.status === 'COMPLETED').length,  // סך המשימות שהושלמו
+          timeInvested
+        };
+
+        await updateDoc(worldRef, {
+          stats: newStats
+        });
+      }
+
       onUpdate();
     } catch (error) {
       console.error('Error updating task status:', error);

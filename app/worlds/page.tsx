@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useApp } from '@/app/contexts/AppContext';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import { World, WorldCategory, TimeSlot } from '@/app/types/index';
+import { World, WorldCategory, TimeSlot, Goal, WorldStats, Task } from '@/app/types';
 import { useRouter } from 'next/navigation';
 import { getWorldName, getWorldDescription, getWorldIcon } from '@/lib/utils/worldUtils';
 import WorldTimeSettings from '@/app/components/worlds/WorldTimeSettings';
@@ -12,6 +12,20 @@ import { formatTime } from '@/lib/utils/timeUtils';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 import WorldsTimeDistribution from '@/app/components/worlds/WorldsTimeDistribution';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
+
+declare module '@/app/types' {
+  interface World {
+    stats?: WorldStats;
+  }
+}
+
+const defaultStats: WorldStats = {
+  totalGoals: 0,
+  completedGoals: 0,
+  totalTasks: 0,
+  completedTasks: 0,
+  timeInvested: 0
+};
 
 export default function WorldsSetup() {
   const { user, worlds, refreshWorlds } = useApp();
@@ -35,44 +49,76 @@ export default function WorldsSetup() {
       return;
     }
     
-    console.log('WorldsSetup: Starting worlds load', {
-      userId: user.id,
-      currentWorldsCount: worlds.length
-    });
-
     setIsLoading(true);
     try {
       const worldsRef = collection(db, `users/${user.id}/worlds`);
       const snapshot = await getDocs(worldsRef);
-      const worldsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as World[];
-      
-      const normalizedWorlds = worldsData.map(world => ({
-        ...world,
-        isActive: world.isActive ?? false,
-        timeSlots: world.timeSlots ?? [],
-        stats: world.stats ?? {
-          totalGoals: 0,
-          completedGoals: 0,
-          timeInvested: 0
-        }
+      const worldsData = await Promise.all(snapshot.docs.map(async (doc) => {
+        const worldId = doc.id;
+        const worldData = doc.data() as Omit<World, 'id'>;
+        
+        // Get goals
+        const goalsRef = collection(db, `users/${user.id}/worlds/${worldId}/goals`);
+        const goalsSnapshot = await getDocs(goalsRef);
+        const goals = goalsSnapshot.docs.map(goalDoc => ({ 
+          id: goalDoc.id, 
+          ...goalDoc.data() 
+        })) as Goal[];
+        
+        // Get tasks for each goal
+        let totalTasks = 0;
+        let completedTasks = 0;
+        let timeInvested = 0;
+        
+        // נשנה את הלוגיקה לטעינת המשימות
+        await Promise.all(goals.map(async (goal) => {
+          const tasksRef = collection(db, `users/${user.id}/worlds/${worldId}/goals/${goal.id}/tasks`);
+          const tasksSnapshot = await getDocs(tasksRef);
+          const tasks = tasksSnapshot.docs.map(taskDoc => ({
+            id: taskDoc.id,
+            ...taskDoc.data()
+          })) as Task[];
+          
+          totalTasks += tasks.length;
+          completedTasks += tasks.filter(task => task.status === 'COMPLETED').length;
+          
+          // חישוב הזמן המושקע
+          tasks.forEach(task => {
+            if (task.status === 'COMPLETED' && task.actualStart && task.actualEnd) {
+              const start = new Date(task.actualStart);
+              const end = new Date(task.actualEnd);
+              timeInvested += (end.getTime() - start.getTime()) / (1000 * 60); // המרה לדקות
+            }
+          });
+        }));
+
+        const stats: WorldStats = {
+          totalGoals: goals.length,
+          completedGoals: goals.filter(g => g.isCompleted).length,
+          totalTasks,
+          completedTasks,
+          timeInvested
+        };
+
+        return {
+          ...worldData,
+          id: worldId,
+          stats,
+          isActive: worldData.isActive ?? false,
+          timeSlots: worldData.timeSlots ?? [],
+        } as World;
       }));
-      
-      refreshWorlds(normalizedWorlds);
+
+      refreshWorlds(worldsData);
       isDataLoaded.current = true;
-      initialLoadAttempted.current = true;
       
-      console.log('WorldsSetup: Worlds loaded successfully', {
-        count: normalizedWorlds.length
-      });
-    } catch (error: unknown) {
-      console.error('WorldsSetup: Error loading worlds:', error);
+    } catch (error) {
+      console.error('Error loading worlds:', error);
+      setError('אירעה שגיאה בטעינת הנתונים');
     } finally {
       setIsLoading(false);
     }
-  }, [user, refreshWorlds, worlds]);
+  }, [user, refreshWorlds, worlds.length]);
 
   useEffect(() => {
     loadWorlds();
@@ -120,7 +166,7 @@ export default function WorldsSetup() {
       
       await addDoc(worldsRef, newWorld);
       // טען מחדש את העולמות מהשרת
-      const updatedWorlds = [...worlds, { ...newWorld, id: 'temp', stats: { totalGoals: 0, completedGoals: 0, timeInvested: 0 } }];
+      const updatedWorlds = [...worlds, { ...newWorld, id: 'temp', stats: defaultStats }];
       refreshWorlds(updatedWorlds);
     } catch (err) {
       setError('אירעה שגיאה בהפעלת העולם');
@@ -295,11 +341,7 @@ interface WorldCardProps {
   onNavigate?: () => void;
   onActivate?: () => Promise<void>;
   onDeactivate?: () => Promise<void>;
-  stats?: {
-    totalGoals: number;
-    completedGoals: number;
-    timeInvested: number;
-  };
+  stats?: WorldStats;
 }
 
 function WorldCard({ 
@@ -312,7 +354,7 @@ function WorldCard({
   onActivate, 
   onNavigate, 
   onDeactivate,
-  stats 
+  stats = defaultStats
 }: WorldCardProps) {
   const { user } = useApp();
 
@@ -335,15 +377,17 @@ function WorldCard({
     userId: user?.id || '',
     name: title,
     description,
-    category: WorldCategory.WORK, // שינוי לקטגוריה שקיימת ב-enum
+    category: WorldCategory.WORK,
     isActive,
     timeSlots,
     createdAt: new Date(),
     updatedAt: new Date(),
-    stats: stats || {
-      totalGoals: 0,
-      completedGoals: 0,
-      timeInvested: 0
+    stats: {
+      totalGoals: stats.totalGoals,
+      completedGoals: stats.completedGoals,
+      totalTasks: stats.totalTasks,
+      completedTasks: stats.completedTasks,
+      timeInvested: stats.timeInvested
     }
   };
 
@@ -374,16 +418,26 @@ function WorldCard({
         <div className="grid grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 rounded-lg">
           <div>
             <div className="text-sm text-gray-500">מטרות</div>
-            <div className="font-semibold">{stats.completedGoals}/{stats.totalGoals}</div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-500">הושקעו</div>
-            <div className="font-semibold">{formatTime(stats.timeInvested)}</div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-500">התקדמות</div>
             <div className="font-semibold">
-              {stats.totalGoals ? Math.round((stats.completedGoals / stats.totalGoals) * 100) : 0}%
+              {stats.totalGoals === 0 ? (
+                <span className="text-yellow-600 text-sm">
+                  🎯 הגדר את המטרה הראשונה שלך
+                </span>
+              ) : (
+                `${stats.completedGoals}/${stats.totalGoals}`
+              )}
+            </div>
+          </div>
+          <div>
+            <div className="text-sm text-gray-500">משימות</div>
+            <div className="font-semibold">
+              {stats.completedTasks}/{stats.totalTasks}
+            </div>
+          </div>
+          <div>
+            <div className="text-sm text-gray-500">זמן שהושקע</div>
+            <div className="font-semibold">
+              {formatTime(stats.timeInvested)}
             </div>
           </div>
         </div>

@@ -26,6 +26,14 @@ export interface TimeSlot {
   endTime: string;
 }
 
+export interface WorldStats {
+  totalGoals: number;
+  completedGoals: number;
+  totalTasks: number;
+  completedTasks: number;
+  timeInvested: number;
+}
+
 export interface World {
   id: string;
   userId: string;
@@ -34,14 +42,10 @@ export interface World {
   category: WorldCategory;
   isActive: boolean;
   timeSlots: TimeSlot[];
-  stats?: {
-    totalGoals: number;
-    completedGoals: number;
-    timeInvested: number;
-  };
-  icon?: string;
   createdAt: Date;
   updatedAt: Date;
+  stats?: WorldStats;
+  icon?: string;
 }
 
 export interface BigStone {

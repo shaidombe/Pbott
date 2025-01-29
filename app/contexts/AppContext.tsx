@@ -9,7 +9,8 @@ import {
   Goal, 
   ConnectedCalendar, 
   GoogleCalendarService,
-  GoogleCalendarResponse 
+  GoogleCalendarResponse,
+  WorldStats
 } from '@/app/types';
 import { auth, db } from '@/lib/firebase/config';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
@@ -36,6 +37,15 @@ const defaultGoogleCalendar: GoogleCalendarService = {
   connect: async () => {},
   disconnect: async () => {},
   getEvents: async () => ({ items: [] })  // החזרת אובייקט ריק כברירת מחדל
+};
+
+// עדכון הערך ברירת המחדל של stats
+const defaultStats: WorldStats = {
+  totalGoals: 0,
+  completedGoals: 0,
+  totalTasks: 0,
+  completedTasks: 0,
+  timeInvested: 0
 };
 
 export const AppContext = createContext<AppContextType>({
@@ -105,11 +115,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             ...world,
             isActive: world.isActive ?? false,
             timeSlots: world.timeSlots ?? [],
-            stats: world.stats ?? {
-              totalGoals: 0,
-              completedGoals: 0,
-              timeInvested: 0
-            }
+            stats: world.stats ?? defaultStats // שימוש בערך ברירת המחדל המעודכן
           }));
           
           console.log('AppContext: Worlds updated from Firestore', { 
