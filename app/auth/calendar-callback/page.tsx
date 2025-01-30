@@ -27,12 +27,6 @@ const CalendarCallback = () => {
 
       const redirectUri = window.location.origin + '/auth/calendar-callback';
       
-      console.log('Starting token exchange with params:', {
-        code: code.substring(0, 10) + '...',
-        redirectUri,
-        timestamp: new Date().toISOString()
-      });
-
       const response = await fetch('/api/auth/google-calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -40,34 +34,37 @@ const CalendarCallback = () => {
       });
 
       const data = await response.json();
-      console.log('API Response:', { 
-        status: response.status, 
-        statusText: response.statusText,
-        data 
-      });
 
-      if (!response.ok) {
+      if (!response.ok || !data.token) {
         throw new Error(`Token exchange failed: ${data.error || response.statusText}`);
       }
 
-      if (!data.token) {
-        throw new Error('No token received from server');
-      }
-
-      // שמירת הטוקן והמשך התהליך
+      // שמירת הטוקן
       localStorage.removeItem('googleCalendarState');
       localStorage.setItem('temp_calendar_token', data.token);
       await updateGoogleCalendarStatus(true);
-      router.push('/calendars?action=select_calendar');
 
-    } catch (error: unknown) {
-      console.error('Calendar authentication error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      router.push(`/calendars?error=auth_failed&details=${encodeURIComponent(errorMessage)}`);
+      // בדיקה איזו פעולה צריך לבצע
+      const action = localStorage.getItem('calendar_action');
+      const calendarToDelete = localStorage.getItem('calendar_to_delete');
+      localStorage.removeItem('calendar_action');
+
+      if (action === 'delete_tasks' && calendarToDelete) {
+        // חזרה לדף היומנים בלי פרמטרים נוספים
+        router.push('/calendars');
+      } else if (action === 'create_tasks') {
+        router.push('/calendars?action=create_tasks');
+      } else {
+        router.push('/calendars?action=select_calendar');
+      }
+
+    } catch (error) {
+      console.error('Error in calendar callback:', error);
+      router.push('/calendars?error=callback_failed');
     } finally {
       isProcessingRef.current = false;
     }
-  }, [searchParams, router, updateGoogleCalendarStatus]);
+  }, [router, searchParams, updateGoogleCalendarStatus]);
 
   useEffect(() => {
     handleCallback();

@@ -112,14 +112,15 @@ export interface DailyPlan {
   updatedAt: Date;
 }
 
-export type CalendarType = 'HOME' | 'WORK' | 'LEISURE' | 'PRIMARY' | 'OTHER';
+export type CalendarType = 'PRIMARY' | 'WORK' | 'HOME' | 'LEISURE' | 'OTHER' | 'TASKS';
 
 export interface ConnectedCalendar {
   id: string;
   googleCalendarId: string;
   name: string;
-  types: string[];
-  color?: string;
+  type: CalendarType;
+  types: CalendarType[];
+  color: string;
   isActive: boolean;
   userId: string;
   createdAt: Date;

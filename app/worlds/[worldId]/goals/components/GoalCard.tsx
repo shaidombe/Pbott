@@ -109,14 +109,14 @@ const TimeProgress = ({ endDate, startDate, label }: TimeProgressProps) => {
         <span>{format(startDate, 'd MMM', { locale: he })}</span>
       </div>
       
-      <div className="relative h-8 bg-gray-100 rounded-lg overflow-hidden">
+      <div className="relative h-4 bg-gray-100 rounded-lg overflow-hidden">
         {/* חלק שעבר - אפור */}
         <div 
           className="absolute h-full right-0 bg-gray-300 transition-all duration-500"
           style={{ width: `${progressPercent}%` }}
         >
           <div className="h-full w-full flex items-center justify-center">
-            <span className="text-sm text-white font-medium">
+            <span className="text-xs text-white font-medium">
               {passedDays} ימים
             </span>
           </div>
@@ -130,7 +130,7 @@ const TimeProgress = ({ endDate, startDate, label }: TimeProgressProps) => {
           }}
         >
           <div className="h-full w-full flex items-center justify-center">
-            <span className="text-sm text-white font-medium">
+            <span className="text-xs text-white font-medium">
               {remainingDays} ימים
             </span>
           </div>
@@ -494,53 +494,18 @@ export default function GoalCard({ worldId, goal, onUpdate }: GoalCardProps) {
                 </span>
               )}
             </div>
-            <div className="w-full bg-gray-100 rounded-full h-2 mb-2">
+            <div className="relative w-full bg-gray-300 rounded-lg h-8">
               <div 
-                className={`h-2 rounded-full transition-all duration-300 ${
+                className={`absolute h-full rounded-lg transition-all duration-300 ${
                   isCompleted ? 'bg-green-500' : 'bg-primary-500'
                 }`}
                 style={{ width: `${Math.min(100, (goal.currentProgress / goal.target) * 100)}%` }}
               />
-            </div>
-            
-            <div className="flex items-center justify-between mt-2">
-              <div className="text-sm text-gray-600">
-                {goal.isCompleted && getTasksProgress().completed === getTasksProgress().total && getTasksProgress().total > 0 ? (
-                  <span className="text-green-600 font-medium">
-                    {goal.updatedAt ? 
-                      `הושלם בהצלחה 🎉 ${formatRelativeTime(goal.updatedAt)}` :
-                      'הושלם בהצלחה 🎉'
-                    }
-                  </span>
-                ) : (
-                  getRemainingTasks()
-                )}
+              <div className="absolute inset-0 flex items-center justify-center text-sm font-medium">
+                <span className="text-white">
+                  {getRemainingTasks()}
+                </span>
               </div>
-              
-              {goal.measurementType === 'NUMERIC' && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => updateProgress(false)}
-                    disabled={goal.currentProgress <= 0}
-                    className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-50 disabled:hover:bg-transparent"
-                    title="הפחת"
-                  >
-                    <MinusIcon className="w-5 h-5 text-gray-500" />
-                  </button>
-                  
-                  <span className="text-lg font-medium text-gray-700">
-                    {goal.currentProgress}
-                  </span>
-                  
-                  <button
-                    onClick={() => updateProgress(true)}
-                    className="p-1 rounded-full hover:bg-gray-100"
-                    title="הוסף"
-                  >
-                    <PlusIcon className="w-5 h-5 text-gray-500" />
-                  </button>
-                </div>
-              )}
             </div>
           </div>
 

@@ -1,16 +1,34 @@
 'use client';
 import { useApp } from '@/app/contexts/AppContext';
 import { useState, useEffect, useCallback } from 'react';
-import { doc, setDoc, collection, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, collection, getDocs, updateDoc, deleteDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { GoogleCalendarService } from '@/app/services/googleCalendar';
-import { ConnectedCalendar, CalendarType } from '@/app/types';
+import { CalendarType } from '@/app/types';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { auth } from '@/lib/firebase/config';
+import { CheckCircleIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/solid';
+import { Switch } from '@headlessui/react';
 
 interface GoogleCalendar {
   id: string;
   summary: string;
   backgroundColor: string;
+}
+
+interface ConnectedCalendar {
+  id: string;
+  name: string;
+  summary?: string;
+  type: string;
+  isActive: boolean;
+  color?: string;
+  googleCalendarId: string;
+  types: CalendarType[];
+  userId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  accessToken?: string;
 }
 
 export default function CalendarSetup() {
@@ -25,6 +43,12 @@ export default function CalendarSetup() {
   const [error, setError] = useState<string | null>(null);
   const [selectedCalendarTypes, setSelectedCalendarTypes] = useState<CalendarType[]>([]);
   const [editingCalendar, setEditingCalendar] = useState<ConnectedCalendar | null>(null);
+  const [hasTasksCalendar, setHasTasksCalendar] = useState(false);
+  const [isCreatingTasksCalendar, setIsCreatingTasksCalendar] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<'new' | 'existing' | ''>('');
+  const [newCalendarName, setNewCalendarName] = useState('Pbott Tasks');
+  const [newCalendarColor, setNewCalendarColor] = useState('#FF9800');
+  const [isCreatingCalendar, setIsCreatingCalendar] = useState(false);
 
   const loadConnectedCalendars = useCallback(async () => {
     if (!user) return;
@@ -36,9 +60,14 @@ export default function CalendarSetup() {
         id: doc.id,
         ...doc.data()
       })) as ConnectedCalendar[];
+      
+      // בדיקה אם קיים יומן משימות לפי הטיפוס
+      const tasksCalendarExists = calendarsData.some(cal => cal.type === 'TASKS');
+      setHasTasksCalendar(tasksCalendarExists);
+      
       setConnectedCalendars(calendarsData);
-    } catch (error: unknown) {
-      console.error('Error loading calendars:', error instanceof Error ? error.message : 'Unknown error');
+    } catch (error) {
+      console.error('Error loading calendars:', error);
     } finally {
       setIsLoading(false);
     }
@@ -48,12 +77,37 @@ export default function CalendarSetup() {
     loadConnectedCalendars();
   }, [loadConnectedCalendars]);
 
+  const fetchAvailableCalendars = async (token: string) => {
+    try {
+      console.log('Fetching calendars with token:', token);
+      const calendarService = new GoogleCalendarService(token);
+      const response = await calendarService.getCalendarList();
+      console.log('Got calendars:', response.items);
+      setAvailableCalendars(response.items || []);
+      setShowCalendarTypeDialog(true);
+    } catch (error) {
+      console.error('Error fetching available calendars:', error);
+      setError('אירעה שגיאה בטעינת היומנים הזמינים');
+    }
+  };
+
   useEffect(() => {
-    if (searchParams.get('action') === 'select_calendar') {
-      const token = localStorage.getItem('temp_calendar_token');
-      if (token) {
+    const action = searchParams.get('action');
+    const token = localStorage.getItem('temp_calendar_token');
+
+    if (!token) {
+      return;
+    }
+
+    switch (action) {
+      case 'select_calendar':
         fetchAvailableCalendars(token);
-      }
+        break;
+      case 'create_tasks':
+        fetchAvailableCalendars(token);  // נביא את רשימת היומנים
+        setSelectedOption('new');         // נבחר אוטומטית באפשרות של יומן חדש
+        setShowCalendarTypeDialog(true);  // נפתח את הדיאלוג
+        break;
     }
   }, [searchParams]);
 
@@ -114,17 +168,45 @@ export default function CalendarSetup() {
     if (!user || !confirm('האם אתה בטוח שברצונך להסיר יומן זה?')) return;
     
     try {
+      // אם זה יומן משימות, נמחק גם מגוגל קלנדר
+      if (calendar.type === 'TASKS') {
+        const idToken = await auth.currentUser?.getIdToken(true);
+        
+        const response = await fetch('/api/calendar/delete-tasks-calendar', {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${idToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            calendarId: calendar.googleCalendarId
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to delete Google Calendar');
+        }
+      }
+      
+      // מחיקה מפיירסטור
       await deleteDoc(
         doc(db, 'users', user.id, 'connectedCalendars', calendar.id)
       );
       
-      // בדיקה אם זה היומן האחרון
+      // עדכון סטטוס אם זה היומן האחרון
       const remainingCalendars = connectedCalendars.filter(c => c.id !== calendar.id);
       if (remainingCalendars.length === 0) {
         await updateGoogleCalendarStatus(false);
       }
       
+      // עדכון סטטוס יומן משימות אם רלוונטי
+      if (calendar.type === 'TASKS') {
+        setHasTasksCalendar(false);
+      }
+      
       await loadConnectedCalendars();
+      
     } catch (error) {
       console.error('Error removing calendar:', error);
       setError('אירעה שגיאה בהסרת היומן');
@@ -133,11 +215,6 @@ export default function CalendarSetup() {
 
   const connectNewCalendar = async () => {
     try {
-      // אם יש חיבור אבל אין יומנים, נאפס את הסטטוס
-      if (user?.googleCalendarConnected && connectedCalendars.length === 0) {
-        await updateGoogleCalendarStatus(false);
-      }
-
       const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
       if (!clientId) throw new Error('Google Client ID is not configured');
 
@@ -164,9 +241,7 @@ export default function CalendarSetup() {
       authUrl.searchParams.append('prompt', 'consent');
       authUrl.searchParams.append('state', state);
 
-      // במקום לפתוח חלון חדש, נעשה redirect ישיר
       window.location.href = authUrl.toString();
-
     } catch (error) {
       console.error('Error connecting calendar:', error);
       setError(error instanceof Error ? error.message : 'אירעה שגיאה בניסיון לחבר יומן חדש');
@@ -175,18 +250,6 @@ export default function CalendarSetup() {
 
   const getCalendarsByType = (type: CalendarType) => {
     return connectedCalendars.filter(cal => cal.types.includes(type));
-  };
-
-  const fetchAvailableCalendars = async (token: string) => {
-    try {
-      const calendarService = new GoogleCalendarService(token);
-      const response = await calendarService.getCalendarList();
-      setAvailableCalendars(response.items || []);
-      setShowCalendarTypeDialog(true);
-    } catch (error) {
-      console.error('Error fetching available calendars:', error);
-      setError('אירעה שגיאה בטעינת היומנים הזמינים');
-    }
   };
 
   const handleCalendarSelection = async () => {
@@ -200,6 +263,7 @@ export default function CalendarSetup() {
         id: selectedCalendar.id,
         googleCalendarId: selectedCalendar.id,
         name: selectedCalendar.summary,
+        type: selectedCalendarTypes[0] || 'OTHER',
         types: selectedCalendarTypes,
         color: selectedCalendar.backgroundColor,
         isActive: true,
@@ -257,7 +321,146 @@ export default function CalendarSetup() {
     }
   };
 
+  const createTasksCalendar = async (token: string) => {
+    if (!user) return;
+    
+    try {
+      const idToken = await auth.currentUser?.getIdToken(true);
+      
+      const response = await fetch('/api/calendar/create-tasks-calendar', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ token })
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        if (data.error === 'Tasks calendar already exists') {
+          setError('יומן משימות כבר קיים במערכת');
+        } else {
+          throw new Error(data.error || 'Failed to create tasks calendar');
+        }
+        return;
+      }
+
+      // עדכון הרשימה
+      await loadConnectedCalendars();
+      localStorage.removeItem('temp_calendar_token');
+      
+    } catch (error) {
+      console.error('Error creating tasks calendar:', error);
+      setError('אירעה שגיאה ביצירת יומן המשימות');
+    }
+  };
+
+  const editCalendar = async (calendar: ConnectedCalendar) => {
+    try {
+      // כאן תוכל להוסיף את הלוגיקה של העריכה
+      // למשל, פתיחת מודל עריכה או מעבר לדף עריכה
+      console.log('Edit calendar:', calendar);
+    } catch (error) {
+      console.error('Error editing calendar:', error);
+      setError('אירעה שגיאה בעריכת היומן');
+    }
+  };
+
   const isEffectivelyConnected = user?.googleCalendarConnected && connectedCalendars.length > 0;
+
+  const handleCreateTasksCalendar = async () => {
+    // בדיקה אם כבר יש יומן משימות
+    const existingTasksCalendar = connectedCalendars.find(cal => cal.type === 'TASKS');
+    if (existingTasksCalendar) {
+      setError('יומן משימות כבר קיים במערכת');
+      return;
+    }
+
+    const token = localStorage.getItem('temp_calendar_token');
+    
+    if (!token) {
+      // אם אין טוקן, נשמור את הפעולה הרצויה ונבקש הזדהות
+      localStorage.setItem('calendar_action', 'create_tasks');
+      await connectNewCalendar();
+      return;
+    }
+
+    // פתיחת הדיאלוג עם האפשרויות
+    setSelectedOption('new');
+    setNewCalendarName('Pbott Tasks');
+    setNewCalendarColor('#FF9800');
+    setShowCalendarTypeDialog(true);
+  };
+
+  const handleTasksCalendarSelection = async () => {
+    if (!user) return;
+    
+    try {
+      setIsCreatingCalendar(true);
+      
+      const token = localStorage.getItem('temp_calendar_token');
+      if (!token) throw new Error('No access token found');
+      
+      const idToken = await auth.currentUser?.getIdToken(true);
+      
+      if (selectedOption === 'new') {
+        // יצירת יומן חדש
+        const response = await fetch('/api/calendar/create-tasks-calendar', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${idToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            token,
+            name: newCalendarName,
+            color: newCalendarColor
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to create calendar');
+        }
+
+        const data = await response.json();
+
+        // הוספת היומן החדש ל-Firestore
+        const calendarData = {
+          id: data.calendarId,
+          googleCalendarId: data.calendarId,
+          name: newCalendarName,
+          type: 'TASKS',
+          types: ['TASKS'],
+          color: newCalendarColor,
+          isActive: true,
+          userId: user.id,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+
+        await setDoc(
+          doc(db, `users/${user.id}/connectedCalendars/${calendarData.id}`),
+          calendarData
+        );
+      }
+
+      await loadConnectedCalendars();
+      setHasTasksCalendar(true);
+      localStorage.removeItem('temp_calendar_token');
+      setShowCalendarTypeDialog(false);
+      setSelectedOption('');
+      setSelectedCalendar(null);
+      
+    } catch (error) {
+      console.error('Error handling tasks calendar selection:', error);
+      setError('אירעה שגיאה בהגדרת יומן המשימות');
+    } finally {
+      setIsCreatingCalendar(false);
+    }
+  };
 
   if (isLoading) {
     return <div className="flex justify-center items-center min-h-[200px]">
@@ -303,6 +506,60 @@ export default function CalendarSetup() {
         </div>
       </div>
 
+      {/* יומן משימות */}
+      <section className="mb-8">
+        <h2 className="text-xl font-bold mb-4">יומן משימות Pbott</h2>
+        <div className="bg-white rounded-lg p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-3 h-3 rounded-full ${
+                hasTasksCalendar ? 'bg-green-500' : 'bg-yellow-500'
+              }`} />
+              <div>
+                {hasTasksCalendar && (
+                  <h3 className="font-medium">
+                    {connectedCalendars.find(cal => cal.type === 'TASKS')?.name}
+                  </h3>
+                )}
+                <p className={`text-sm ${
+                  hasTasksCalendar ? 'text-green-700' : 'text-yellow-700'
+                }`}>
+                  {hasTasksCalendar 
+                    ? 'יומן המשימות מחובר' 
+                    : 'יומן ייעודי למשימות המערכת'}
+                </p>
+              </div>
+            </div>
+            
+            {hasTasksCalendar ? (
+              <button
+                onClick={() => {
+                  const tasksCalendar = connectedCalendars.find(cal => cal.type === 'TASKS');
+                  if (tasksCalendar) {
+                    removeCalendar(tasksCalendar);
+                  }
+                }}
+                className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                disabled={isCreatingTasksCalendar}
+              >
+                הסר יומן משימות
+              </button>
+            ) : (
+              <button
+                onClick={handleCreateTasksCalendar}
+                className={`px-4 py-2 rounded-lg ${
+                  isEffectivelyConnected
+                    ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                    : 'bg-primary-500 text-white hover:bg-primary-600'
+                }`}
+              >
+                צור יומן משימות
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* יומנים מחוברים */}
       <section className="mb-8">
         <h2 className="text-xl font-bold mb-4">יומנים מחוברים</h2>
@@ -310,87 +567,189 @@ export default function CalendarSetup() {
           {connectedCalendars.length === 0 ? (
             <p className="text-gray-500">אין יומנים מחוברים</p>
           ) : (
-            connectedCalendars.map(calendar => (
-              <CalendarCard
-                key={calendar.id}
-                calendar={calendar}
-                onEdit={handleEditCalendar}
-                onToggle={toggleCalendarActive}
-                onRemove={removeCalendar}
-              />
-            ))
+            connectedCalendars
+              .filter(calendar => calendar.type !== 'TASKS')
+              .map(calendar => (
+                <CalendarCard
+                  key={calendar.id}
+                  calendar={calendar}
+                  onEdit={handleEditCalendar}
+                  onToggle={toggleCalendarActive}
+                  onRemove={removeCalendar}
+                />
+              ))
           )}
         </div>
       </section>
 
-      {/* דיאלוג בחירת יומן */}
+      {error && (
+        <div className="mt-4 p-4 bg-red-50 text-red-600 rounded-lg">
+          {error}
+        </div>
+      )}
+
       {showCalendarTypeDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h2 className="text-xl font-bold mb-4">
-              {editingCalendar ? 'עריכת יומן' : 'הוספת יומן חדש'}
+              {editingCalendar ? 'עריכת יומן' : 
+               searchParams.get('action') === 'create_tasks' ? 'הגדרת יומן משימות' : 
+               'הוספת יומן חדש'}
             </h2>
             
-            {/* בחירת יומן - רק להוספה חדשה */}
-            {!editingCalendar && (
-              <div className="mb-4">
+            {searchParams.get('action') === 'create_tasks' ? (
+              // דיאלוג יומן משימות
+              <div className="mb-6">
                 <label className="block text-sm font-medium text-neutral-900 mb-2">
-                  בחר יומן
+                  בחר אפשרות
                 </label>
-                <select
-                  className="w-full p-2 border rounded-md"
-                  value={selectedCalendar?.id || ''}
-                  onChange={(e) => {
-                    const calendar = availableCalendars.find(c => c.id === e.target.value);
-                    setSelectedCalendar(calendar || null);
-                  }}
-                >
-                  <option value="">בחר יומן...</option>
-                  {availableCalendars.map(calendar => (
-                    <option key={calendar.id} value={calendar.id}>
-                      {calendar.summary}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+                <div className="space-y-4">
+                  {/* אפשרות ליצירת יומן חדש */}
+                  <div className="p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <label className="flex items-center cursor-pointer">
+                      <input
+                        type="radio"
+                        name="calendarOption"
+                        value="new"
+                        checked={selectedOption === 'new'}
+                        onChange={() => setSelectedOption('new')}
+                        className="ml-2"
+                      />
+                      <div>
+                        <div className="font-medium">צור יומן משימות חדש</div>
+                        <div className="text-sm text-gray-500">יצירת יומן ייעודי למשימות המערכת</div>
+                      </div>
+                    </label>
+                    
+                    {selectedOption === 'new' && (
+                      <div className="mt-4 space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">שם היומן</label>
+                          <input
+                            type="text"
+                            value={newCalendarName}
+                            onChange={(e) => setNewCalendarName(e.target.value)}
+                            placeholder="שם היומן"
+                            className="w-full p-2 border rounded-md"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">צבע</label>
+                          <input
+                            type="color"
+                            value={newCalendarColor}
+                            onChange={(e) => setNewCalendarColor(e.target.value)}
+                            className="w-full h-10 p-1 border rounded-md"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
-            {/* בחירת סוגים מרובים */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-neutral-900 mb-2">
-                סוגי יומן (ניתן לבחור מספר אפשרויות)
-              </label>
-              <div className="space-y-2">
-                {(['PRIMARY', 'WORK', 'HOME', 'LEISURE', 'OTHER'] as CalendarType[]).map(type => (
-                  <label key={type} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={selectedCalendarTypes.includes(type)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedCalendarTypes(prev => [...prev, type]);
-                        } else {
-                          setSelectedCalendarTypes(prev => prev.filter(t => t !== type));
-                        }
-                      }}
-                      className="mr-2"
-                    />
-                    {type === 'PRIMARY' ? 'יומן ראשי' :
-                     type === 'WORK' ? 'עבודה' :
-                     type === 'HOME' ? 'בית' :
-                     type === 'LEISURE' ? 'פנאי' : 'אחר'}
-                  </label>
-                ))}
+                  {/* אפשרות לבחירת יומן קיים */}
+                  <div className="p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <label className="flex items-center cursor-pointer">
+                      <input
+                        type="radio"
+                        name="calendarOption"
+                        value="existing"
+                        checked={selectedOption === 'existing'}
+                        onChange={() => setSelectedOption('existing')}
+                        className="ml-2"
+                      />
+                      <div>
+                        <div className="font-medium">בחר יומן קיים</div>
+                        <div className="text-sm text-gray-500">הגדר יומן קיים כיומן המשימות שלך</div>
+                      </div>
+                    </label>
+
+                    {selectedOption === 'existing' && (
+                      <div className="mt-4">
+                        <select
+                          className="w-full p-2 border rounded-md"
+                          value={selectedCalendar?.id || ''}
+                          onChange={(e) => {
+                            const calendar = availableCalendars.find(c => c.id === e.target.value);
+                            setSelectedCalendar(calendar || null);
+                          }}
+                        >
+                          <option value="">בחר יומן...</option>
+                          {availableCalendars.map(calendar => (
+                            <option key={calendar.id} value={calendar.id}>
+                              {calendar.summary}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              // דיאלוג יומן רגיל
+              <>
+                {!editingCalendar && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-neutral-900 mb-2">
+                      בחר יומן
+                    </label>
+                    <select
+                      className="w-full p-2 border rounded-md"
+                      value={selectedCalendar?.id || ''}
+                      onChange={(e) => {
+                        const calendar = availableCalendars.find(c => c.id === e.target.value);
+                        setSelectedCalendar(calendar || null);
+                      }}
+                    >
+                      <option value="">בחר יומן...</option>
+                      {availableCalendars.map(calendar => (
+                        <option key={calendar.id} value={calendar.id}>
+                          {calendar.summary}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-neutral-900 mb-2">
+                    סוגי יומן (ניתן לבחור מספר אפשרויות)
+                  </label>
+                  <div className="space-y-2">
+                    {(['PRIMARY', 'WORK', 'HOME', 'LEISURE', 'OTHER'] as CalendarType[]).map(type => (
+                      <label key={type} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedCalendarTypes.includes(type)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCalendarTypes(prev => [...prev, type]);
+                            } else {
+                              setSelectedCalendarTypes(prev => prev.filter(t => t !== type));
+                            }
+                          }}
+                          className="mr-2"
+                        />
+                        {type === 'PRIMARY' ? 'יומן ראשי' :
+                         type === 'WORK' ? 'עבודה' :
+                         type === 'HOME' ? 'בית' :
+                         type === 'LEISURE' ? 'פנאי' : 'אחר'}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* כפתורי פעולה */}
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => {
                   setShowCalendarTypeDialog(false);
-                  setEditingCalendar(null);
-                  setSelectedCalendarTypes([]);
+                  setSelectedOption('');
+                  setSelectedCalendar(null);
+                  setNewCalendarName('Pbott Tasks');
+                  setNewCalendarColor('#FF9800');
                   localStorage.removeItem('temp_calendar_token');
                 }}
                 className="px-4 py-2 text-neutral-800 hover:bg-neutral-100 rounded-md"
@@ -398,11 +757,17 @@ export default function CalendarSetup() {
                 ביטול
               </button>
               <button
-                onClick={editingCalendar ? handleUpdateCalendar : handleCalendarSelection}
-                disabled={!editingCalendar && !selectedCalendar}
+                onClick={searchParams.get('action') === 'create_tasks' ? 
+                  handleTasksCalendarSelection : 
+                  editingCalendar ? handleUpdateCalendar : handleCalendarSelection}
+                disabled={
+                  searchParams.get('action') === 'create_tasks' ? 
+                    (!selectedOption || (selectedOption === 'existing' && !selectedCalendar)) : 
+                    (!editingCalendar && !selectedCalendar)
+                }
                 className="px-4 py-2 bg-primary-500 text-white rounded-md hover:bg-primary-600 disabled:opacity-50"
               >
-                {editingCalendar ? 'עדכן' : 'הוסף'} יומן
+                {editingCalendar ? 'עדכן' : 'אישור'}
               </button>
             </div>
           </div>
@@ -435,10 +800,11 @@ const CalendarCard = ({
         <div className="flex gap-2 mt-1">
           {calendar.types.map(type => (
             <span key={type} className="text-xs px-2 py-1 bg-gray-200 rounded-full">
-              {type === 'PRIMARY' ? 'ראשי' :
+              {type === 'PRIMARY' ? 'יומן ראשי' :
                type === 'WORK' ? 'עבודה' :
                type === 'HOME' ? 'בית' :
-               type === 'LEISURE' ? 'פנאי' : 'אחר'}
+               type === 'LEISURE' ? 'פנאי' :
+               type === 'TASKS' ? 'משימות' : 'אחר'}
             </span>
           ))}
         </div>
@@ -465,7 +831,7 @@ const CalendarCard = ({
         onClick={() => onRemove(calendar)}
         className="px-3 py-1 rounded text-sm text-red-600 hover:bg-red-50"
       >
-        הסר
+        {calendar.type === 'TASKS' ? 'הסר יומן משימות' : 'הסר'}
       </button>
     </div>
   </div>
