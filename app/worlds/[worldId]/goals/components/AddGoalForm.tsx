@@ -46,49 +46,47 @@ export default function AddGoalForm({ worldId, goal, onComplete, onCancel }: Add
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !title.trim() || !deadline || isNaN(deadline.getTime())) {
-      alert('נא למלא את כל השדות הנדרשים ולבחור תאריך תקין');
-      return;
-    }
+    if (!user) return;
 
-    setIsLoading(true);
     try {
-      const now = new Date().toISOString();
-      const goalData = {
-        title: title.trim(),
-        description: description.trim(),
-        importance,
-        deadline: deadline.toISOString(),
-        measurementType,
-        target,
-        targetUnit: measurementType === 'NUMERIC' ? targetUnit : 'tasks',
-        updatedAt: now,
-        createdAt: now
-      };
-
-      if (goal?.id) {
-        // עריכה
+      if (goal) {
+        // עדכון מטרה קיימת
         const goalRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${goal.id}`);
-        await updateDoc(goalRef, goalData);
+        const updatedGoal = {
+          title,
+          description,
+          importance,
+          measurementType,
+          target,
+          targetUnit,
+          deadline: deadline?.toISOString(),
+          updatedAt: new Date().toISOString(),
+          // לא כוללים את createdAt בעדכון כדי שישמר התאריך המקורי
+        };
+        await updateDoc(goalRef, updatedGoal);
       } else {
-        // הוספה חדשה
-        const goalsRef = collection(db, `users/${user.id}/worlds/${worldId}/goals`);
-        await addDoc(goalsRef, {
-          ...goalData,
-          worldId,
-          userId: user.id,
+        // יצירת מטרה חדשה
+        const newGoal = {
+          title,
+          description,
+          importance,
+          measurementType,
+          target,
+          targetUnit,
+          deadline: deadline?.toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
           currentProgress: 0,
           timeInvested: 0,
-          isCompleted: false,
-          createdAt: now
-        });
+          isCompleted: false
+        };
+        await addDoc(collection(db, `users/${user.id}/worlds/${worldId}/goals`), newGoal);
       }
+      
       onComplete();
-    } catch (err) {
-      console.error('Error saving goal:', err);
-      alert(goal?.id ? 'אירעה שגיאה בעדכון המטרה' : 'אירעה שגיאה בהוספת המטרה');
-    } finally {
-      setIsLoading(false);
+    } catch (error) {
+      console.error('Error saving goal:', error);
+      alert('אירעה שגיאה בשמירת המטרה');
     }
   };
 

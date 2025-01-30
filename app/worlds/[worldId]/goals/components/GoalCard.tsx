@@ -61,6 +61,91 @@ const formatDate = (date: Date) => {
   }
 };
 
+interface TimeProgressProps {
+  endDate: Date;
+  startDate: Date;
+  label: string;
+}
+
+const TimeProgress = ({ endDate, startDate, label }: TimeProgressProps) => {
+  const calculateProgress = () => {
+    const now = new Date();
+    const end = new Date(endDate);
+    const start = new Date(startDate);
+    
+    const totalDiff = end.getTime() - start.getTime();
+    const passedDiff = now.getTime() - start.getTime();
+    const remainingDiff = end.getTime() - now.getTime();
+
+    // חישוב ימים שעברו
+    const passedDays = Math.max(Math.floor(passedDiff / (1000 * 60 * 60 * 24)), 0);
+
+    // חישוב ימים שנותרו
+    const remainingDays = Math.max(Math.ceil(remainingDiff / (1000 * 60 * 60 * 24)), 0);
+
+    // אחוז התקדמות מדויק
+    const progressPercent = Math.min(Math.max((passedDiff / totalDiff) * 100, 0), 100);
+
+    return {
+      passedDays,
+      remainingDays,
+      progressPercent
+    };
+  };
+
+  const getProgressColor = (remainingDays: number) => {
+    if (remainingDays <= 7) return 'bg-red-500'; // שבוע אחרון - אדום
+    if (remainingDays <= 21) return 'bg-orange-500'; // 3 שבועות - כתום
+    return 'bg-blue-500'; // מעל חודש - כחול
+  };
+
+  const { passedDays, remainingDays, progressPercent } = calculateProgress();
+
+  return (
+    <div className="my-4">
+      <div className="text-sm text-gray-600 mb-2 flex justify-between">
+        <span>{format(endDate, 'd MMM', { locale: he })}</span>
+        <span>היום</span>
+        <span>{format(startDate, 'd MMM', { locale: he })}</span>
+      </div>
+      
+      <div className="relative h-8 bg-gray-100 rounded-lg overflow-hidden">
+        {/* חלק שעבר - אפור */}
+        <div 
+          className="absolute h-full right-0 bg-gray-300 transition-all duration-500"
+          style={{ width: `${progressPercent}%` }}
+        >
+          <div className="h-full w-full flex items-center justify-center">
+            <span className="text-sm text-white font-medium">
+              {passedDays} ימים
+            </span>
+          </div>
+        </div>
+
+        {/* חלק שנותר - צבע דינמי */}
+        <div 
+          className={`absolute h-full left-0 transition-all duration-500 ${getProgressColor(remainingDays)}`}
+          style={{ 
+            width: `${100 - progressPercent}%`
+          }}
+        >
+          <div className="h-full w-full flex items-center justify-center">
+            <span className="text-sm text-white font-medium">
+              {remainingDays} ימים
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* טקסט מתחת לפס */}
+      <div className="mt-2 flex justify-between text-xs text-gray-500">
+        <span>עברו {passedDays} ימים</span>
+        <span>נותרו {remainingDays} ימים</span>
+      </div>
+    </div>
+  );
+};
+
 export default function GoalCard({ worldId, goal, onUpdate }: GoalCardProps) {
   const { user } = useApp();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -98,6 +183,14 @@ export default function GoalCard({ worldId, goal, onUpdate }: GoalCardProps) {
     setIsCompleted(completed);
   }, [goal.currentProgress, goal.target, isCompleted]);
 
+  useEffect(() => {
+    if (goal.deadline) {
+      console.log('Goal Dates:', {
+        createdAt: goal.createdAt,
+        deadline: goal.deadline
+      });
+    }
+  }, [goal.createdAt, goal.deadline]);
 
   // חישוב זמן בפורמט קריא
   const formatTime = (minutes: number) => {
@@ -453,18 +546,12 @@ export default function GoalCard({ worldId, goal, onUpdate }: GoalCardProps) {
 
           {/* תאריכים */}
           <div className="text-sm text-gray-500 space-y-1 mb-4">
-            {/* תאריך יצירה */}
-            <div className="flex items-center gap-1">
-              <span>📅</span>
-              <span>נוצר {goal.createdAt ? formatRelativeTime(goal.createdAt) : 'תאריך לא ידוע'}</span>
-            </div>
-            
-            {/* תאריך יעד */}
             {goal.deadline && (
-              <div className="flex items-center gap-1">
-                <span>🎯</span>
-                <span>{calculateTimeLeft(goal.deadline)} ({formatDate(goal.deadline)})</span>
-              </div>
+              <TimeProgress
+                endDate={new Date(goal.deadline)}
+                startDate={goal.createdAt}
+                label={calculateTimeLeft(new Date(goal.deadline))}
+              />
             )}
           </div>
 
