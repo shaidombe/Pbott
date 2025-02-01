@@ -157,6 +157,7 @@ export interface GoogleCalendarResponse {
 }
 
 export interface GoogleCalendarService {
+  type?: CalendarType;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   getEvents: (timeMin: Date, timeMax: Date) => Promise<GoogleCalendarResponse>;
@@ -168,4 +169,21 @@ export interface AppContextType {
   loading: boolean;
   googleCalendar: GoogleCalendarService;
   connectedCalendars: ConnectedCalendar[];
+}
+
+export interface ScheduleResult {
+  success: boolean;
+  scheduledStart?: Date;
+  scheduledEnd?: Date;
+  isOutOfPreferredTime?: boolean;
+  conflictingEvents?: CalendarEvent[];
+  diagnosticInfo: {
+    taskDuration: number;
+    numberOfWindows: number;
+    existingEvents: number;
+    worldTimeSlots: number;
+    checkedCalendars: string[];
+    failureReason: string;
+  };
+  error?: string;
 } 

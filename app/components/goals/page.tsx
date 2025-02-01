@@ -8,6 +8,25 @@ import { World, Goal } from '@/app/types';
 import { useParams } from 'next/navigation';
 import GoalCard from './components/GoalCard';
 import AddGoalForm from './components/AddGoalForm';
+import Link from 'next/link';
+import TaskList from './components/TaskList';
+
+type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+interface Day {
+  value: DayOfWeek;
+  label: string;
+}
+
+const DAYS: Day[] = [
+  { value: 0, label: 'ראשון' },
+  { value: 1, label: 'שני' },
+  { value: 2, label: 'שלישי' },
+  { value: 3, label: 'רביעי' },
+  { value: 4, label: 'חמישי' },
+  { value: 5, label: 'שישי' },
+  { value: 6, label: 'שבת' }
+] as const;
 
 export default function WorldGoals() {
   const { user } = useApp();
@@ -88,6 +107,43 @@ export default function WorldGoals() {
         </div>
       </div>
 
+      {/* Time Slots Summary */}
+      <div className="bg-white p-6 rounded-xl shadow-sm mb-8">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-medium">זמנים מתוכננים</h2>
+          <Link 
+            href={`/worlds/${worldId}`}
+            className="text-primary-500 hover:text-primary-600 text-sm"
+          >
+            ערוך זמנים
+          </Link>
+        </div>
+        
+        {world.timeSlots && world.timeSlots.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {DAYS.map(day => {
+              const daySlots = world.timeSlots.filter(slot => slot.dayOfWeek === day.value);
+              if (daySlots.length === 0) return null;
+              
+              return (
+                <div key={day.value} className="p-3 bg-gray-50 rounded-lg">
+                  <div className="font-medium mb-2">{day.label}</div>
+                  {daySlots.map((slot, index) => (
+                    <div key={index} className="text-sm text-gray-600">
+                      {slot.startTime} - {slot.endTime}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center text-gray-500 py-4">
+            לא הוגדרו זמנים קבועים לעולם זה
+          </div>
+        )}
+      </div>
+
       {error ? (
         <div className="text-red-500 text-center py-12">{error}</div>
       ) : (
@@ -99,7 +155,20 @@ export default function WorldGoals() {
                 key={goal.id}
                 worldId={worldId}
                 goal={goal}
-              />
+                world={world!}
+                onUpdate={() => {
+                  loadWorldAndGoals();
+                }}
+              >
+                <TaskList
+                  worldId={worldId}
+                  goalId={goal.id}
+                  world={world!}
+                  onUpdate={() => {
+                    loadWorldAndGoals();
+                  }}
+                />
+              </GoalCard>
             ))}
           </div>
 

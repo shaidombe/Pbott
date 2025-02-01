@@ -1,6 +1,6 @@
 'use client';
-import { useState } from 'react';
-import { Task, World } from '@/app/types';
+import { useState, useEffect } from 'react';
+import { Task, World, CalendarEvent } from '@/app/types';
 import { useApp } from '@/hooks/useApp';
 import { addDoc, collection, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
@@ -10,6 +10,8 @@ import { TaskScheduler } from '@/app/services/TaskScheduler';
 import { addMinutes, format } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { GoogleCalendarService, GoogleCalendarResponse } from '@/app/types';
+import { ExclamationCircleIcon, ExclamationTriangleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
+import { useRouter } from 'next/navigation';
 
 interface AddTaskFormProps {
   worldId: string;
@@ -50,8 +52,16 @@ const PRIORITY_OPTIONS = [
   }
 ] as const;
 
+// מחוץ לקומפוננטה - פונקציית עזר
+const getDateString = (date: Date | string) => {
+  if (!date) return '';
+  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  return dateObj.toISOString();
+};
+
 export default function AddTaskForm({ worldId, goalId, task, world, onComplete, onCancel }: AddTaskFormProps) {
-  const { user, googleCalendar } = useApp();
+  const { user, googleCalendar, connectedCalendars } = useApp();
+  const router = useRouter();
   const [title, setTitle] = useState(task?.title || '');
   const [selectedDuration, setSelectedDuration] = useState<string | number>(task?.estimatedDuration || 30);
   const [customDuration, setCustomDuration] = useState('');
@@ -66,6 +76,19 @@ export default function AddTaskForm({ worldId, goalId, task, world, onComplete, 
   });
   const [isLoading, setIsLoading] = useState(false);
   const [suggestedTime, setSuggestedTime] = useState<Date | null>(null);
+  const [conflicts, setConflicts] = useState<{
+    events: CalendarEvent[];
+    scheduledStart: Date;
+  } | null>(null);
+  const [error, setError] = useState<{
+    title: string;
+    message: string;
+    type: 'error' | 'warning' | 'info';
+    actionButton?: {
+      text: string;
+      action: () => void;
+    };
+  } | null>(null);
 
   const handleDurationChange = (value: string) => {
     setSelectedDuration(value === 'custom' ? 'custom' : Number(value));
@@ -80,29 +103,31 @@ export default function AddTaskForm({ worldId, goalId, task, world, onComplete, 
   };
 
   const findAvailableSlot = async () => {
-    console.log('Debug findAvailableSlot:', { 
-      userConnected: user?.googleCalendarConnected,
-      hasGoogleCalendar: !!googleCalendar,
-      user,
-      googleCalendar 
-    });
-
-    if (!user?.googleCalendarConnected) {
-      console.log('User not connected to Google Calendar');
-      alert('נא לחבר את היומן בהגדרות היומן');
+    if (!googleCalendar || !user?.googleCalendarConnected) {
+      console.error('Google Calendar not connected');
       return;
     }
 
-    if (!googleCalendar) {
-      console.log('GoogleCalendar object is missing');
-      alert('אירעה שגיאה בחיבור ליומן. נא לנסות להתחבר מחדש');
+    // מציאת היומן הראשי (או הראשון) מהיומנים המחוברים
+    const primaryCalendar = connectedCalendars.find(cal => 
+      cal.type === 'TASKS' || cal.isActive
+    );
+
+    if (!primaryCalendar) {
+      console.error('No active calendar found');
+      alert('לא נמצא יומן פעיל. אנא הגדר יומן ברירת מחדל בהגדרות.');
       return;
     }
 
     setIsLoading(true);
     try {
-      console.log('Creating TaskScheduler with calendar:', googleCalendar);
-      const scheduler = new TaskScheduler([googleCalendar]);
+      const calendarWithId = {
+        ...googleCalendar,
+        calendarId: primaryCalendar.googleCalendarId
+      };
+
+      console.log('Creating TaskScheduler with calendar:', calendarWithId);
+      const scheduler = new TaskScheduler([calendarWithId]);
       
       const taskData = {
         title,
@@ -120,12 +145,33 @@ export default function AddTaskForm({ worldId, goalId, task, world, onComplete, 
       
       if (result.success && result.scheduledStart) {
         setSuggestedTime(result.scheduledStart);
+        
+        if (result.conflictingEvents?.length) {
+          setConflicts({
+            events: result.conflictingEvents,
+            scheduledStart: result.scheduledStart
+          });
+        }
       } else {
-        alert('לא נמצא חלון זמן מתאים למשימה');
+        setError({
+          title: 'לא נמצא זמן פנוי',
+          message: result.error || 'לא נמצא זמן פנוי מתאים למשימה',
+          type: 'warning',
+          actionButton: result.diagnosticInfo.failureReason === 'NO_TIME_SLOTS' ? {
+            text: 'להגדרת זמנים',
+            action: () => {
+              router.push(`/worlds/${worldId}/settings#timeSlots`);
+            }
+          } : undefined
+        });
       }
     } catch (error) {
       console.error('Detailed error in finding available slot:', error);
-      alert('אירעה שגיאה בחיפוש זמן פנוי');
+      setError({
+        title: 'שגיאה',
+        message: 'אירעה שגיאה בחיפוש זמן פנוי. אנא נסה שוב.',
+        type: 'error'
+      });
     } finally {
       setIsLoading(false);
     }
@@ -212,6 +258,19 @@ export default function AddTaskForm({ worldId, goalId, task, world, onComplete, 
       }
     }
   };
+
+  useEffect(() => {
+    if (task?.deadline) {
+      const createdAtString = getDateString(task.createdAt);
+      const deadlineString = getDateString(task.deadline);
+      
+      // שימוש בערכים פרימיטיביים כדיפנדנסי
+      console.log('Task Dates:', {
+        createdAt: new Date(createdAtString),
+        deadline: new Date(deadlineString)
+      });
+    }
+  }, [task?.id]); // תלות רק ב-ID של המשימה
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -364,6 +423,32 @@ export default function AddTaskForm({ worldId, goalId, task, world, onComplete, 
           </button>
         )}
       </div>
+
+      {error && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="flex items-center mb-4">
+              {error.type === 'error' && <ExclamationCircleIcon className="w-6 h-6 text-red-500 mr-2" />}
+              {error.type === 'warning' && <ExclamationTriangleIcon className="w-6 h-6 text-yellow-500 mr-2" />}
+              {error.type === 'info' && <InformationCircleIcon className="w-6 h-6 text-blue-500 mr-2" />}
+              <h3 className="text-lg font-medium">{error.title}</h3>
+            </div>
+            <div className="whitespace-pre-wrap text-gray-600">
+              {error.message}
+            </div>
+            <div className="mt-6 flex justify-end">
+              {error.actionButton && (
+                <button
+                  onClick={error.actionButton.action}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-gray-800"
+                >
+                  {error.actionButton.text}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 } 

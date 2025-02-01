@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Task, World } from '@/app/types';
 import AddTaskForm from './AddTaskForm';
 import { PencilIcon } from '@heroicons/react/24/outline';
@@ -11,8 +11,8 @@ import { WorldCategory } from '@/app/types';
 interface TaskListProps {
   worldId: string;
   goalId: string;
-  tasks: Task[];
-  onUpdate: () => Promise<void>;
+  world: World;
+  onUpdate: () => void;
 }
 
 // פונקציה להמרת דקות לפורמט קריא
@@ -40,11 +40,38 @@ const formatDateTime = (date: Date) => {
   });
 };
 
-export default function TaskList({ worldId, goalId, tasks, onUpdate }: TaskListProps) {
+export default function TaskList({ worldId, goalId, world, onUpdate }: TaskListProps) {
   const { user } = useApp();
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [showAddTask, setShowAddTask] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isGoogleCalendarConnected, setIsGoogleCalendarConnected] = useState(false);
+
+  const loadTasks = useCallback(async () => {
+    if (!user) return;
+    try {
+      const tasksRef = collection(db, `users/${user.id}/worlds/${worldId}/goals/${goalId}/tasks`);
+      const tasksSnapshot = await getDocs(tasksRef);
+      const tasksData = tasksSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        deadline: doc.data().deadline ? new Date(doc.data().deadline) : undefined,
+        scheduledStart: doc.data().scheduledStart ? new Date(doc.data().scheduledStart) : undefined,
+        scheduledEnd: doc.data().scheduledEnd ? new Date(doc.data().scheduledEnd) : undefined,
+        actualStart: doc.data().actualStart ? new Date(doc.data().actualStart) : undefined,
+        actualEnd: doc.data().actualEnd ? new Date(doc.data().actualEnd) : undefined,
+        createdAt: new Date(doc.data().createdAt),
+        updatedAt: new Date(doc.data().updatedAt)
+      })) as Task[];
+      setTasks(tasksData);
+    } catch (error) {
+      console.error('Error loading tasks:', error);
+    }
+  }, [user, worldId, goalId]);
+
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
 
   useEffect(() => {
     // בדיקת חיבור ליומן גוגל
@@ -220,16 +247,7 @@ export default function TaskList({ worldId, goalId, tasks, onUpdate }: TaskListP
               worldId={worldId}
               goalId={goalId}
               task={editingTask || undefined}
-              world={{
-                id: worldId,
-                userId: user?.id || '',
-                name: '',
-                category: WorldCategory.CUSTOM,
-                isActive: true,
-                timeSlots: [],
-                createdAt: new Date(),
-                updatedAt: new Date()
-              }}
+              world={world}
               onComplete={() => {
                 setShowAddTask(false);
                 setEditingTask(null);

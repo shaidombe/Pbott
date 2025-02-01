@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { Goal, Task } from '@/app/types';
+import { Goal, Task, World } from '@/app/types';
 import TaskList from './TaskList';
 import { collection, getDocs, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
@@ -15,7 +15,9 @@ import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 interface GoalCardProps {
   worldId: string;
   goal: Goal;
+  world: World;
   onUpdate?: () => void;
+  children?: React.ReactNode;
 }
 
 // פונקציות עזר
@@ -146,7 +148,12 @@ const TimeProgress = ({ endDate, startDate, label }: TimeProgressProps) => {
   );
 };
 
-export default function GoalCard({ worldId, goal, onUpdate }: GoalCardProps) {
+// מחוץ לקומפוננטה
+const getDateKey = (date: Date | string | null) => {
+  if (!date) return '';
+  return new Date(date).getTime().toString();
+};
+export default function GoalCard({ worldId, goal, world, onUpdate, children }: GoalCardProps) {
   const { user } = useApp();
   const [isExpanded, setIsExpanded] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -154,15 +161,19 @@ export default function GoalCard({ worldId, goal, onUpdate }: GoalCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [isCompleted, setIsCompleted] = useState(goal.currentProgress >= goal.target);
+  const [tasksProgress, setTasksProgress] = useState({ completed: 0, total: 0 });
 
   const loadTasks = useCallback(async () => {
     if (!user) return;
     try {
       const tasksRef = collection(db, `users/${user.id}/worlds/${worldId}/goals/${goal.id}/tasks`);
-      const snapshot = await getDocs(tasksRef);
-      const tasksData = snapshot.docs.map(doc => ({
+      const tasksSnapshot = await getDocs(tasksRef);
+      const tasksData = tasksSnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        deadline: doc.data().deadline ? new Date(doc.data().deadline) : null,
+        createdAt: doc.data().createdAt ? new Date(doc.data().createdAt) : new Date(),
+        updatedAt: doc.data().updatedAt ? new Date(doc.data().updatedAt) : new Date()
       })) as Task[];
       setTasks(tasksData);
     } catch (error) {
@@ -185,12 +196,13 @@ export default function GoalCard({ worldId, goal, onUpdate }: GoalCardProps) {
 
   useEffect(() => {
     if (goal.deadline) {
+      const dateKey = `${getDateKey(goal.createdAt)}-${getDateKey(goal.deadline)}`;
       console.log('Goal Dates:', {
-        createdAt: goal.createdAt,
-        deadline: goal.deadline
+        createdAt: new Date(goal.createdAt),
+        deadline: new Date(goal.deadline)
       });
     }
-  }, [goal.createdAt, goal.deadline]);
+  }, [goal.id]);
 
   // חישוב זמן בפורמט קריא
   const formatTime = (minutes: number) => {
@@ -347,44 +359,43 @@ export default function GoalCard({ worldId, goal, onUpdate }: GoalCardProps) {
     };
   };
 
-  const updateGoalProgress = async () => {
-    if (!user) return;
+  const updateGoalProgress = useCallback(async () => {
+    if (!user || !tasks?.length) return;
 
-    const { completed, total } = getTasksProgress();
+    const { completed, total } = tasksProgress;
     
-    // אם אין משימות, אין מה לעדכן
-    if (total === 0) return;
-
     try {
       const goalRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${goal.id}`);
       
-      if (goal.measurementType === 'TASKS') {
-        // עדכון אוטומטי של היעד לפי מספר המשימות הכולל
-        await updateDoc(goalRef, {
-          target: total,
-          currentProgress: completed,
-          isCompleted: completed === total && total > 0,
-          updatedAt: new Date().toISOString()
-        });
-      } else {
-        // לוגיקה קיימת למדידה מספרית
-        const progress = Math.round((completed / total) * 100);
-        await updateDoc(goalRef, {
-          currentProgress: progress,
-          isCompleted: completed === total && total > 0,
-          updatedAt: new Date().toISOString()
-        });
-      }
+      const updates = goal.measurementType === 'TASKS' 
+        ? {
+            target: total,
+            currentProgress: completed,
+          }
+        : {
+            currentProgress: Math.round((completed / total) * 100),
+          };
+      
+      await updateDoc(goalRef, {
+        ...updates,
+        isCompleted: completed === total && total > 0,
+        updatedAt: new Date().toISOString()
+      });
       
       onUpdate?.();
     } catch (error) {
       console.error('Error updating goal progress:', error);
     }
-  };
+  }, [user, tasks, tasksProgress, goal.measurementType, worldId, goal.id]);
 
-  // עדכון אוטומטי כשמשתנות המשימות
   useEffect(() => {
-    if (goal.measurementType === 'TASKS') {
+    if (!tasks?.length) return;
+    
+    const progress = getTasksProgress();
+    setTasksProgress(progress);
+    
+    if (goal.measurementType === 'TASKS' && 
+        (progress.completed !== goal.currentProgress || progress.total !== goal.target)) {
       updateGoalProgress();
     }
   }, [tasks]);
@@ -530,7 +541,7 @@ export default function GoalCard({ worldId, goal, onUpdate }: GoalCardProps) {
 
               <div className="flex items-center gap-1">
                 <span>📋</span>
-                <span>משימות: {getTasksProgress().completed} הושלמו מתוך {getTasksProgress().total}</span>
+                <span>משימות: {tasksProgress.completed} הושלמו מתוך {tasksProgress.total}</span>
               </div>
             </div>
 
@@ -547,16 +558,7 @@ export default function GoalCard({ worldId, goal, onUpdate }: GoalCardProps) {
             </button>
           </div>
 
-          {isExpanded && (
-            <div className="mt-4">
-              <TaskList 
-                worldId={worldId}
-                goalId={goal.id} 
-                tasks={tasks}
-                onUpdate={loadTasks}
-              />
-            </div>
-          )}
+          {isExpanded && children}
         </>
       )}
     </div>
