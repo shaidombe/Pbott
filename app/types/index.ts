@@ -20,6 +20,29 @@ export enum WorldCategory {
   CUSTOM = 'CUSTOM'
 }
 
+export interface WorldEntity {
+  id: string;
+  worldId: string;
+  type: string;
+  name: string;
+  description: string;
+  birthDate?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// טיפוסים מוגדרים מראש לכל עולם
+export const WORLD_ENTITY_TYPES: Record<WorldCategory, string[]> = {
+  WORK: ['חברה', 'תפקיד', 'פרויקט', 'לקוח', 'משימה'],
+  FAMILY: ['בן זוג', 'בת זוג', 'בן', 'בת', 'אח', 'אחות', 'אבא', 'אמא', 'סבא', 'סבתא', 'קרוב משפחה אחר'],
+  HEALTH: ['כושר', 'תזונה', 'שינה', 'טיפול רפואי', 'ספורט'],
+  PERSONAL: ['תחביב', 'למידה', 'מטרה אישית', 'חלום', 'פרויקט אישי'],
+  SOCIAL: ['חבר', 'חברה', 'קבוצה', 'אירוע', 'פעילות', 'מפגש'],
+  STUDY: ['קורס', 'נושא', 'מיומנות', 'תחום ידע', 'פרויקט לימודי'],
+  SLEEP: ['שנת לילה', 'שנת צהריים', 'הרגל שינה'],
+  CUSTOM: ['מותאם אישית']
+};
+
 export interface TimeSlot {
   dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   startTime: string;

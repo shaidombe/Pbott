@@ -8,6 +8,14 @@ interface TimeSettingsModalProps {
   onClose: () => void;
   world: World;
   onUpdate: (timeSlots: TimeSlot[]) => Promise<void>;
+  freeTimeSlots?: Array<{
+    day: number;
+    slots: Array<{
+      start: string;
+      end: string;
+      duration: number;
+    }>;
+  }>;
 }
 
 export default function TimeSettingsModal({ isOpen, onClose, world, onUpdate }: TimeSettingsModalProps) {

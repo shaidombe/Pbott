@@ -84,11 +84,12 @@ export default function TaskList({ worldId, goalId, world, onUpdate }: TaskListP
     if (!user) return;
     
     const taskRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${goalId}/tasks/${task.id}`);
+    const goalRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${goalId}`);
     const newStatus = task.status === 'COMPLETED' ? 'PENDING' : 'COMPLETED';
     const now = new Date();
     
     try {
-      // עדכון סטטוס המשימה
+      // עדכון המשימה
       await updateDoc(taskRef, {
         status: newStatus,
         updatedAt: now.toISOString(),
@@ -101,22 +102,49 @@ export default function TaskList({ worldId, goalId, world, onUpdate }: TaskListP
         })
       });
 
-      // קבלת כל המשימות של העולם
-      const allTasks: Task[] = [];
-      const goalsRef = collection(db, `users/${user.id}/worlds/${worldId}/goals`);
-      const goalsSnapshot = await getDocs(goalsRef);
-      
-      for (const goalDoc of goalsSnapshot.docs) {
-        const tasksRef = collection(db, `users/${user.id}/worlds/${worldId}/goals/${goalDoc.id}/tasks`);
-        const tasksSnapshot = await getDocs(tasksRef);
-        const goalTasks = tasksSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Task[];
-        allTasks.push(...goalTasks);
-      }
+      // עדכון מקומי של המשימות
+      setTasks(prevTasks => 
+        prevTasks.map(t => 
+          t.id === task.id 
+            ? { 
+                ...t, 
+                status: newStatus, 
+                updatedAt: now,
+                actualStart: newStatus === 'COMPLETED' ? (task.actualStart || now) : undefined,
+                actualEnd: newStatus === 'COMPLETED' ? now : undefined
+              }
+            : t
+        )
+      );
 
-      // עדכון סטטיסטיקות העולם
+      // חישוב התקדמות חדשה
+      const updatedTasks = tasks.map(t => 
+        t.id === task.id ? { ...t, status: newStatus } : t
+      );
+      const completed = updatedTasks.filter(t => t.status === 'COMPLETED').length;
+      const total = updatedTasks.length;
+
+      // עדכון המטרה
+      await updateDoc(goalRef, {
+        currentProgress: completed,
+        target: total,
+        isCompleted: completed === total && total > 0,
+        updatedAt: now.toISOString()
+      });
+      
+      // מעדכן את הסטטיסטיקות של העולם
+      await updateWorldStats();
+      
+    } catch (error) {
+      console.error('Error updating task status:', error);
+    }
+  };
+
+  // פונקציה נפרדת לעדכון סטטיסטיקות העולם
+  const updateWorldStats = async () => {
+    if (!user) return;
+    
+    try {
       const worldRef = doc(db, `users/${user.id}/worlds/${worldId}`);
       const worldDoc = await getDoc(worldRef);
       const worldData = worldDoc.data();
@@ -130,29 +158,17 @@ export default function TaskList({ worldId, goalId, world, onUpdate }: TaskListP
           timeInvested: 0
         };
 
-        let timeInvested = currentStats.timeInvested || 0;
-        if (newStatus === 'COMPLETED' && task.estimatedDuration) {
-          timeInvested += task.estimatedDuration;
-        } else if (newStatus === 'PENDING' && task.estimatedDuration) {
-          timeInvested = Math.max(0, timeInvested - task.estimatedDuration);
-        }
-
-        const newStats = {
-          totalGoals: currentStats.totalGoals || 0,
-          completedGoals: currentStats.completedGoals || 0,
-          totalTasks: allTasks.length,  // סך כל המשימות
-          completedTasks: allTasks.filter(t => t.status === 'COMPLETED').length,  // סך המשימות שהושלמו
-          timeInvested
-        };
-
+        // מעדכן רק את הסטטיסטיקות של העולם הנוכחי
         await updateDoc(worldRef, {
-          stats: newStats
+          stats: {
+            ...currentStats,
+            totalTasks: tasks.length,
+            completedTasks: tasks.filter(t => t.status === 'COMPLETED').length
+          }
         });
       }
-
-      onUpdate();
     } catch (error) {
-      console.error('Error updating task status:', error);
+      console.error('Error updating world stats:', error);
     }
   };
 
@@ -251,7 +267,6 @@ export default function TaskList({ worldId, goalId, world, onUpdate }: TaskListP
               onComplete={() => {
                 setShowAddTask(false);
                 setEditingTask(null);
-                onUpdate();
               }}
               onCancel={() => {
                 setShowAddTask(false);

@@ -57,11 +57,10 @@ export default function AddGoalForm({ worldId, goal, onComplete, onCancel }: Add
           description,
           importance,
           measurementType,
-          target,
-          targetUnit,
+          target: measurementType === 'NUMERIC' ? target : 0,
+          targetUnit: measurementType === 'NUMERIC' ? targetUnit : 'משימות',
           deadline: deadline?.toISOString(),
           updatedAt: new Date().toISOString(),
-          // לא כוללים את createdAt בעדכון כדי שישמר התאריך המקורי
         };
         await updateDoc(goalRef, updatedGoal);
       } else {
@@ -71,8 +70,8 @@ export default function AddGoalForm({ worldId, goal, onComplete, onCancel }: Add
           description,
           importance,
           measurementType,
-          target,
-          targetUnit,
+          target: measurementType === 'NUMERIC' ? target : 0,
+          targetUnit: measurementType === 'NUMERIC' ? targetUnit : 'משימות',
           deadline: deadline?.toISOString(),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -172,24 +171,26 @@ export default function AddGoalForm({ worldId, goal, onComplete, onCancel }: Add
         </select>
 
         <div className="flex gap-2">
-          <input
-            type="number"
-            value={target}
-            onChange={(e) => setTarget(Number(e.target.value))}
-            min="1"
-            className="w-24 p-2 border rounded-md"
-            required
-          />
-          {measurementType === 'NUMERIC' && (
-            <input
-              type="text"
-              value={targetUnit}
-              onChange={(e) => setTargetUnit(e.target.value)}
-              placeholder="יחידת מדידה"
-              className="flex-1 p-2 border rounded-md"
-              required
-            />
-          )}
+          {measurementType === 'NUMERIC' ? (
+            <>
+              <input
+                type="number"
+                value={target}
+                onChange={(e) => setTarget(Number(e.target.value))}
+                min="1"
+                className="w-24 p-2 border rounded-md"
+                required
+              />
+              <input
+                type="text"
+                value={targetUnit}
+                onChange={(e) => setTargetUnit(e.target.value)}
+                placeholder="יחידת מדידה"
+                className="flex-1 p-2 border rounded-md"
+                required
+              />
+            </>
+          ) : null}
         </div>
       </div>
 

@@ -121,7 +121,7 @@ export default function DailySchedule() {
           return (
             <div key={item.id}>
               {/* חלון זמן פנוי לפני */}
-              {index > 0 && freeSlots.find(slot => 
+              {index > 0 && freeSlots[index - 1] && freeSlots.find(slot => 
                 slot.start.getTime() === scheduleItems[index - 1].end.getTime() &&
                 slot.end.getTime() === item.start.getTime()
               ) && (

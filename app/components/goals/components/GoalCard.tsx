@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Goal, Task, World } from '@/app/types';
 import TaskList from './TaskList';
-import { collection, getDocs, doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { useApp } from '@/lib/hooks/useApp';
 import { EllipsisHorizontalIcon, PlusIcon, MinusIcon } from '@heroicons/react/24/outline';
@@ -153,20 +153,38 @@ const getDateKey = (date: Date | string | null) => {
   if (!date) return '';
   return new Date(date).getTime().toString();
 };
-export default function GoalCard({ worldId, goal, world, onUpdate, children }: GoalCardProps) {
+export default function GoalCard({ worldId, goal: initialGoal, world, onUpdate, children }: GoalCardProps) {
   const { user } = useApp();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [showMenu, setShowMenu] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [isCompleted, setIsCompleted] = useState(goal.currentProgress >= goal.target);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [currentGoal, setCurrentGoal] = useState(initialGoal);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksProgress, setTasksProgress] = useState({ completed: 0, total: 0 });
+  const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    
+    // מאזין לשינויים במטרה
+    const goalRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${initialGoal.id}`);
+    const unsubscribe = onSnapshot(goalRef, (doc) => {
+      if (doc.exists()) {
+        const updatedGoal = { id: doc.id, ...doc.data() } as Goal;
+        setCurrentGoal(updatedGoal);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user, worldId, initialGoal.id]);
 
   const loadTasks = useCallback(async () => {
-    if (!user) return;
+    if (!user || isLoading) return;
+    setIsLoading(true);
     try {
-      const tasksRef = collection(db, `users/${user.id}/worlds/${worldId}/goals/${goal.id}/tasks`);
+      const tasksRef = collection(db, `users/${user.id}/worlds/${worldId}/goals/${initialGoal.id}/tasks`);
       const tasksSnapshot = await getDocs(tasksRef);
       const tasksData = tasksSnapshot.docs.map(doc => ({
         id: doc.id,
@@ -178,31 +196,26 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
       setTasks(tasksData);
     } catch (error) {
       console.error('Error loading tasks:', error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [user, worldId, goal.id]);
+  }, [user, worldId, initialGoal.id]);
 
   useEffect(() => {
-    loadTasks();
-  }, [loadTasks]);
+    const loadInitialTasks = async () => {
+      await loadTasks();
+    };
+    loadInitialTasks();
+  }, [worldId, initialGoal.id]);
 
   useEffect(() => {
-    const completed = goal.currentProgress >= goal.target;
+    const completed = initialGoal.currentProgress >= initialGoal.target;
     if (completed && !isCompleted) {
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 5000);
     }
     setIsCompleted(completed);
-  }, [goal.currentProgress, goal.target, isCompleted]);
-
-  useEffect(() => {
-    if (goal.deadline) {
-      const dateKey = `${getDateKey(goal.createdAt)}-${getDateKey(goal.deadline)}`;
-      console.log('Goal Dates:', {
-        createdAt: new Date(goal.createdAt),
-        deadline: new Date(goal.deadline)
-      });
-    }
-  }, [goal.id]);
+  }, [initialGoal.currentProgress, initialGoal.target, isCompleted]);
 
   // חישוב זמן בפורמט קריא
   const formatTime = (minutes: number) => {
@@ -216,7 +229,7 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
     if (!user || !confirm('האם אתה בטוח שברצונך למחוק מטרה זו?')) return;
 
     try {
-      const goalRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${goal.id}`);
+      const goalRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${initialGoal.id}`);
       await deleteDoc(goalRef);
       onUpdate?.();
     } catch (err) {
@@ -226,14 +239,14 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
   };
 
   const updateProgress = async (increment: boolean) => {
-    if (!user || !goal.id) return;
+    if (!user || !initialGoal.id) return;
     
     try {
       const newProgress = increment 
-        ? Math.min(goal.currentProgress + 1, goal.target)
-        : Math.max(goal.currentProgress - 1, 0);
+        ? Math.min(initialGoal.currentProgress + 1, initialGoal.target)
+        : Math.max(initialGoal.currentProgress - 1, 0);
       
-      const goalRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${goal.id}`);
+      const goalRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${initialGoal.id}`);
       await updateDoc(goalRef, {
         currentProgress: newProgress,
         updatedAt: new Date().toISOString()
@@ -247,11 +260,11 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
   };
 
   const getRemainingTasks = () => {
-    const remaining = goal.target - goal.currentProgress;
-    if (goal.measurementType === 'TASKS') {
+    const remaining = initialGoal.target - initialGoal.currentProgress;
+    if (initialGoal.measurementType === 'TASKS') {
       return `נשארו ${remaining} משימות להשלים`;
     }
-    return `נשארו ${remaining} ${goal.targetUnit} להשלים`;
+    return `נשארו ${remaining} ${initialGoal.targetUnit} להשלים`;
   };
 
   // פונקציה לפורמט של תאריך ושעה בעברית
@@ -365,9 +378,9 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
     const { completed, total } = tasksProgress;
     
     try {
-      const goalRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${goal.id}`);
+      const goalRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${initialGoal.id}`);
       
-      const updates = goal.measurementType === 'TASKS' 
+      const updates = initialGoal.measurementType === 'TASKS' 
         ? {
             target: total,
             currentProgress: completed,
@@ -386,26 +399,36 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
     } catch (error) {
       console.error('Error updating goal progress:', error);
     }
-  }, [user, tasks, tasksProgress, goal.measurementType, worldId, goal.id]);
+  }, [user, tasks, tasksProgress, initialGoal.measurementType, worldId, initialGoal.id]);
 
   useEffect(() => {
-    if (!tasks?.length) return;
+    if (!tasks?.length || !user) return;
     
     const progress = getTasksProgress();
+    if (JSON.stringify(progress) === JSON.stringify(tasksProgress)) return;
+    
     setTasksProgress(progress);
     
-    if (goal.measurementType === 'TASKS' && 
-        (progress.completed !== goal.currentProgress || progress.total !== goal.target)) {
-      updateGoalProgress();
+    // עדכון רק אם זו מטרה מסוג משימות
+    if (initialGoal.measurementType === 'TASKS') {
+      const goalRef = doc(db, `users/${user.id}/worlds/${worldId}/goals/${initialGoal.id}`);
+      updateDoc(goalRef, {
+        currentProgress: progress.completed,
+        target: progress.total,
+        isCompleted: progress.completed === progress.total && progress.total > 0,
+        updatedAt: new Date().toISOString()
+      }).catch(error => {
+        console.error('Error updating goal progress:', error);
+      });
     }
-  }, [tasks]);
+  }, [tasks, initialGoal.measurementType, user, worldId, initialGoal.id]);
 
   const getProgressDisplay = () => {
-    if (goal.measurementType === 'TASKS') {
+    if (initialGoal.measurementType === 'TASKS') {
       const { completed, total } = getTasksProgress();
       return `${completed} מתוך ${total} משימות הושלמו`;
     }
-    return `${goal.currentProgress} מתוך ${goal.target} ${goal.targetUnit}`;
+    return `${initialGoal.currentProgress} מתוך ${initialGoal.target} ${initialGoal.targetUnit}`;
   };
 
   return (
@@ -425,7 +448,7 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
           <h3 className="text-lg font-semibold mb-4">עריכת מטרה</h3>
           <AddGoalForm
             worldId={worldId}
-            goal={goal}
+            goal={initialGoal}
             onComplete={async () => {
               onUpdate?.();
               setIsEditing(false);
@@ -438,14 +461,14 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
           <div className="flex justify-between items-start mb-4">
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-medium text-gray-900">{goal.title}</h3>
+                <h3 className="text-lg font-medium text-gray-900">{initialGoal.title}</h3>
                 <span className="text-sm px-2 py-0.5 rounded-full bg-primary-50 text-primary-700">
-                  {getImportanceLabel(goal.importance)}
+                  {getImportanceLabel(initialGoal.importance)}
                 </span>
               </div>
               
-              {goal.description && (
-                <p className="text-gray-600 mt-1 text-sm">{goal.description}</p>
+              {initialGoal.description && (
+                <p className="text-gray-600 mt-1 text-sm">{initialGoal.description}</p>
               )}
             </div>
 
@@ -495,13 +518,13 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
           <div className="mb-4">
             <div className="flex justify-between items-center text-sm text-gray-600 mb-1">
               <span>{getProgressDisplay()}</span>
-              {goal.measurementType === 'TASKS' ? (
+              {initialGoal.measurementType === 'TASKS' ? (
                 <span className={isCompleted ? 'text-green-600 font-semibold' : ''}>
                   {tasks.length > 0 ? Math.round((getTasksProgress().completed / getTasksProgress().total) * 100) : 0}%
                 </span>
               ) : (
                 <span className={isCompleted ? 'text-green-600 font-semibold' : ''}>
-                  {Math.round((goal.currentProgress / goal.target) * 100)}%
+                  {Math.round((initialGoal.currentProgress / initialGoal.target) * 100)}%
                 </span>
               )}
             </div>
@@ -510,7 +533,7 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
                 className={`absolute h-full rounded-lg transition-all duration-300 ${
                   isCompleted ? 'bg-green-500' : 'bg-primary-500'
                 }`}
-                style={{ width: `${Math.min(100, (goal.currentProgress / goal.target) * 100)}%` }}
+                style={{ width: `${Math.min(100, (initialGoal.currentProgress / initialGoal.target) * 100)}%` }}
               />
               <div className="absolute inset-0 flex items-center justify-center text-sm font-medium">
                 <span className="text-white">
@@ -522,11 +545,11 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
 
           {/* תאריכים */}
           <div className="text-sm text-gray-500 space-y-1 mb-4">
-            {goal.deadline && (
+            {initialGoal.deadline && (
               <TimeProgress
-                endDate={new Date(goal.deadline)}
-                startDate={goal.createdAt}
-                label={calculateTimeLeft(new Date(goal.deadline))}
+                endDate={new Date(initialGoal.deadline)}
+                startDate={initialGoal.createdAt}
+                label={calculateTimeLeft(new Date(initialGoal.deadline))}
               />
             )}
           </div>
@@ -536,7 +559,7 @@ export default function GoalCard({ worldId, goal, world, onUpdate, children }: G
             <div className="text-sm text-gray-500 space-y-1 mb-3">
               <div className="flex items-center gap-1">
                 <span>⏱️</span>
-                <span>זמן שהושקע: {formatTimeInvested(goal.timeInvested)}</span>
+                <span>זמן שהושקע: {formatTimeInvested(initialGoal.timeInvested)}</span>
               </div>
 
               <div className="flex items-center gap-1">
