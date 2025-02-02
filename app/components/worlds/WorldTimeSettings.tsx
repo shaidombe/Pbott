@@ -18,38 +18,40 @@ const DAYS = [
 interface Props {
   world: World;
   onUpdate: (timeSlots: TimeSlot[]) => void;
+  freeTimeSlots?: Array<{
+    days: number[];
+    slots: Array<{
+      start: string;
+      end: string;
+      duration: number;
+    }>;
+  }>;
 }
 
 interface TimeRange {
-  startDay: DayOfWeek;
-  endDay: DayOfWeek;
   startTime: string;
   endTime: string;
+  days: DayOfWeek[];  // מערך של ימים שבהם חל הטווח
 }
 
-export default function WorldTimeSettings({ world, onUpdate }: Props) {
+export default function WorldTimeSettings({ world, onUpdate, freeTimeSlots }: Props) {
   const [timeRanges, setTimeRanges] = useState<TimeRange[]>(
     groupTimeSlots(world.timeSlots || [])
   );
   const [isAdding, setIsAdding] = useState(false);
   const [newRange, setNewRange] = useState<TimeRange>({
-    startDay: 0,
-    endDay: 0,
     startTime: "09:00",
-    endTime: "17:00"
+    endTime: "17:00",
+    days: []
   });
 
   // ממיר טווח לרשימת זמנים בודדים
   const expandTimeRange = (range: TimeRange): TimeSlot[] => {
-    const slots: TimeSlot[] = [];
-    for (let day = range.startDay; day <= range.endDay; day++) {
-      slots.push({
-        dayOfWeek: day as DayOfWeek,
-        startTime: range.startTime,
-        endTime: range.endTime
-      });
-    }
-    return slots;
+    return range.days.map(day => ({
+      dayOfWeek: day,
+      startTime: range.startTime,
+      endTime: range.endTime
+    }));
   };
 
   // מקבץ זמנים בודדים לטווחים
@@ -75,25 +77,23 @@ export default function WorldTimeSettings({ world, onUpdate }: Props) {
       groupSlots.forEach(slot => {
         if (!currentRange) {
           currentRange = {
-            startDay: slot.dayOfWeek,
-            endDay: slot.dayOfWeek,
             startTime: slot.startTime,
-            endTime: slot.endTime
+            endTime: slot.endTime,
+            days: [slot.dayOfWeek as DayOfWeek]
           };
           return;
         }
 
         // בדיקה אם היום הנוכחי רציף
-        if (slot.dayOfWeek === currentRange.endDay + 1) {
-          currentRange.endDay = slot.dayOfWeek;
+        if (slot.dayOfWeek === currentRange.days[currentRange.days.length - 1] + 1) {
+          currentRange.days.push(slot.dayOfWeek as DayOfWeek);
         } else {
           // אם לא רציף, שומרים את הטווח הנוכחי ומתחילים חדש
           ranges.push(currentRange);
           currentRange = {
-            startDay: slot.dayOfWeek,
-            endDay: slot.dayOfWeek,
             startTime: slot.startTime,
-            endTime: slot.endTime
+            endTime: slot.endTime,
+            days: [slot.dayOfWeek as DayOfWeek]
           };
         }
       });
@@ -104,7 +104,7 @@ export default function WorldTimeSettings({ world, onUpdate }: Props) {
       }
     });
 
-    return ranges.sort((a, b) => a.startDay - b.startDay);
+    return ranges.sort((a, b) => a.days[0] - b.days[0]);
   }
 
   const handleAddTimeRange = () => {
@@ -127,14 +127,24 @@ export default function WorldTimeSettings({ world, onUpdate }: Props) {
   };
 
   const formatDayRange = (range: TimeRange) => {
-    if (range.startDay === range.endDay) {
-      return DAYS[range.startDay].label;
+    if (range.days.length === 1) {
+      return DAYS[range.days[0]].label;
     }
-    return `${DAYS[range.startDay].label} - ${DAYS[range.endDay].label}`;
+    // מיון הימים לפי הסדר
+    const sortedDays = [...range.days].sort((a, b) => a - b);
+    return sortedDays.map(day => DAYS[day].label).join(', ');
   };
 
   return (
     <div className="space-y-4">
+      {timeRanges.length === 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+          <p className="text-yellow-800">
+            טרם הגדרת זמנים קבועים לעולם זה. הגדרת זמנים תעזור לך לתכנן ולנהל את המשימות שלך בצורה יעילה יותר.
+          </p>
+        </div>
+      )}
+
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold">זמנים קבועים</h3>
         <button 
@@ -153,9 +163,14 @@ export default function WorldTimeSettings({ world, onUpdate }: Props) {
             className="flex items-center justify-between bg-gray-50 p-3 rounded-lg"
           >
             <div className="flex items-center gap-2">
-              <span className="font-medium">{formatDayRange(range)}</span>
+              <span>
+                {range.startTime}
+                {range.startTime > range.endTime && <span className="text-gray-500 text-sm mr-1">(יום למחרת)</span>}
+                {' - '}
+                {range.endTime}
+              </span>
               <span className="text-gray-500">|</span>
-              <span>{range.startTime} - {range.endTime}</span>
+              <span className="font-medium">{formatDayRange(range)}</span>
             </div>
             <button
               onClick={() => removeTimeRange(index)}
@@ -171,47 +186,100 @@ export default function WorldTimeSettings({ world, onUpdate }: Props) {
       {/* טופס הוספת טווח זמנים */}
       {isAdding && (
         <div className="border rounded-lg p-4 space-y-4 bg-gray-50">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">מיום</label>
-              <select
-                value={newRange.startDay}
-                onChange={(e) => setNewRange(prev => ({
-                  ...prev,
-                  startDay: Number(e.target.value) as DayOfWeek,
-                  endDay: Math.max(Number(e.target.value), prev.endDay) as DayOfWeek
-                }))}
-                className="w-full rounded-md border-gray-300"
-              >
-                {DAYS.map(day => (
-                  <option key={day.value} value={day.value}>
-                    {day.label}
-                  </option>
-                ))}
-              </select>
+          {freeTimeSlots && freeTimeSlots.length > 0 && (
+            <div className="mb-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">זמנים פנויים מומלצים:</h4>
+              <div className="grid grid-cols-1 gap-2">
+                {(() => {
+                  // קיבוץ לפי זמני התחלה וסיום זהים
+                  const groupedByTime = freeTimeSlots.reduce((acc, dayData) => {
+                    dayData.slots.forEach(slot => {
+                      const timeKey = `${slot.start}-${slot.end}`;
+                      if (!acc[timeKey]) {
+                        acc[timeKey] = {
+                          start: slot.start,
+                          end: slot.end,
+                          duration: slot.duration,
+                          days: []
+                        };
+                      }
+                      acc[timeKey].days.push(...dayData.days);
+                    });
+                    return acc;
+                  }, {} as Record<string, {
+                    start: string;
+                    end: string;
+                    duration: number;
+                    days: number[];
+                  }>);
+
+                  // מיון וקיבוץ ימים רציפים
+                  return Object.values(groupedByTime)
+                    .map(group => {
+                      const sortedDays = [...new Set(group.days)].sort((a, b) => a - b);
+                      const dayRanges: number[][] = [];
+                      let currentRange: number[] = [sortedDays[0]];
+
+                      for (let i = 1; i < sortedDays.length; i++) {
+                        if (sortedDays[i] === sortedDays[i-1] + 1) {
+                          currentRange.push(sortedDays[i]);
+                        } else {
+                          dayRanges.push([...currentRange]);
+                          currentRange = [sortedDays[i]];
+                        }
+                      }
+                      dayRanges.push(currentRange);
+
+                      return dayRanges.map(days => ({
+                        start: group.start,
+                        end: group.end,
+                        duration: group.duration,
+                        days
+                      }));
+                    })
+                    .flat()
+                    .sort((a, b) => {
+                      const dayDiff = a.days[0] - b.days[0];
+                      if (dayDiff !== 0) return dayDiff;
+                      return a.start.localeCompare(b.start);
+                    })
+                    .map((timeSlot, index) => (
+                      <button
+                        key={index}
+                        onClick={() => {
+                          setNewRange({
+                            startTime: timeSlot.start,
+                            endTime: timeSlot.end,
+                            days: timeSlot.days as DayOfWeek[]
+                          });
+                        }}
+                        className="w-full text-right p-2 hover:bg-white rounded-md text-sm text-gray-600 hover:text-primary-600 transition-colors border border-gray-200"
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium">
+                            {timeSlot.days.length > 2 
+                              ? `${DAYS[timeSlot.days[0]].label} - ${DAYS[timeSlot.days[timeSlot.days.length - 1]].label}`
+                              : timeSlot.days.map(day => DAYS[day].label).join(', ')}
+                          </span>
+                          <span>
+                            {timeSlot.start} - {timeSlot.end}
+                            <span className="text-gray-400 mr-2">
+                              ({Math.round(timeSlot.duration / 60)} שעות)
+                            </span>
+                          </span>
+                        </div>
+                      </button>
+                    ));
+                })()}
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">עד יום</label>
-              <select
-                value={newRange.endDay}
-                onChange={(e) => setNewRange(prev => ({
-                  ...prev,
-                  endDay: Number(e.target.value) as DayOfWeek
-                }))}
-                className="w-full rounded-md border-gray-300"
-              >
-                {DAYS
-                  .filter(day => day.value >= newRange.startDay)
-                  .map(day => (
-                    <option key={day.value} value={day.value}>
-                      {day.label}
-                    </option>
-                  ))}
-              </select>
-            </div>
+          )}
+
+          <div className="mt-3 border-t pt-3">
+            <p className="text-sm text-gray-500 mb-4">או הגדר טווח זמנים מותאם אישית:</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">משעה</label>
               <input
@@ -226,15 +294,44 @@ export default function WorldTimeSettings({ world, onUpdate }: Props) {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">עד שעה</label>
-              <input
-                type="time"
-                value={newRange.endTime}
-                onChange={(e) => setNewRange(prev => ({
-                  ...prev,
-                  endTime: e.target.value
-                }))}
-                className="w-full rounded-md border-gray-300"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="time"
+                  value={newRange.endTime}
+                  onChange={(e) => setNewRange(prev => ({
+                    ...prev,
+                    endTime: e.target.value
+                  }))}
+                  className="w-full rounded-md border-gray-300"
+                />
+                {newRange.startTime > newRange.endTime && 
+                  <span className="text-gray-500 text-sm whitespace-nowrap">(יום למחרת)</span>
+                }
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2">בחר ימים:</label>
+              <div className="grid grid-cols-4 gap-2">
+                {DAYS.map(day => (
+                  <label key={day.value} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={newRange.days.includes(day.value)}
+                      onChange={(e) => {
+                        setNewRange(prev => ({
+                          ...prev,
+                          days: e.target.checked
+                            ? [...prev.days, day.value]
+                            : prev.days.filter(d => d !== day.value)
+                        }));
+                      }}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm">{day.label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
 

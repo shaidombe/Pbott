@@ -27,6 +27,15 @@ interface Props {
   onDeactivate: (worldId: string) => Promise<void>;
 }
 
+// הוספת הטיפוסים בראש הקובץ
+type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+interface TimeRange {
+  startTime: string;
+  endTime: string;
+  days: DayOfWeek[];
+}
+
 const calculateAge = (birthDate: string | null): number | null => {
   if (!birthDate) return null;
   const today = new Date();
@@ -41,74 +50,79 @@ const calculateAge = (birthDate: string | null): number | null => {
 };
 
 const DAYS = [
-  { value: 0, label: 'ראשון' },
-  { value: 1, label: 'שני' },
-  { value: 2, label: 'שלישי' },
-  { value: 3, label: 'רביעי' },
-  { value: 4, label: 'חמישי' },
-  { value: 5, label: 'שישי' },
-  { value: 6, label: 'שבת' }
+  { value: 0 as DayOfWeek, label: 'ראשון' },
+  { value: 1 as DayOfWeek, label: 'שני' },
+  { value: 2 as DayOfWeek, label: 'שלישי' },
+  { value: 3 as DayOfWeek, label: 'רביעי' },
+  { value: 4 as DayOfWeek, label: 'חמישי' },
+  { value: 5 as DayOfWeek, label: 'שישי' },
+  { value: 6 as DayOfWeek, label: 'שבת' }
 ] as const;
 
-const groupConsecutiveSlots = (slots: TimeSlot[]): Array<{
-  days: number[];
-  startTime: string;
-  endTime: string;
-}> => {
-  if (!slots?.length) return [];
+function groupConsecutiveSlots(slots: TimeSlot[]): TimeRange[] {
+  const ranges: TimeRange[] = [];
+  const sorted = [...slots].sort((a, b) => a.dayOfWeek - b.dayOfWeek);
   
-  // Sort slots by day and time
-  const sortedSlots = [...slots].sort((a, b) => 
-    a.dayOfWeek - b.dayOfWeek || 
-    a.startTime.localeCompare(b.startTime)
-  );
+  // קיבוץ לפי זמני התחלה וסיום זהים
+  const timeGroups: { [key: string]: TimeSlot[] } = {};
   
-  const groups: Array<{
-    days: number[];
-    startTime: string;
-    endTime: string;
-  }> = [];
-  
-  let currentGroup = {
-    days: [sortedSlots[0].dayOfWeek],
-    startTime: sortedSlots[0].startTime,
-    endTime: sortedSlots[0].endTime
-  };
-
-  for (let i = 1; i < sortedSlots.length; i++) {
-    const currentSlot = sortedSlots[i];
-    const prevSlot = sortedSlots[i - 1];
-    
-    if (
-      currentSlot.startTime === currentGroup.startTime &&
-      currentSlot.endTime === currentGroup.endTime &&
-      currentSlot.dayOfWeek === prevSlot.dayOfWeek + 1
-    ) {
-      // Add to current group
-      currentGroup.days.push(currentSlot.dayOfWeek);
-    } else {
-      // Start new group
-      groups.push(currentGroup);
-      currentGroup = {
-        days: [currentSlot.dayOfWeek],
-        startTime: currentSlot.startTime,
-        endTime: currentSlot.endTime
-      };
+  sorted.forEach(slot => {
+    const timeKey = `${slot.startTime}-${slot.endTime}`;
+    if (!timeGroups[timeKey]) {
+      timeGroups[timeKey] = [];
     }
-  }
-  
-  groups.push(currentGroup);
-  return groups;
-};
+    timeGroups[timeKey].push(slot);
+  });
 
-const formatDayRange = (days: number[]): string => {
+  // עיבוד כל קבוצת זמנים
+  Object.entries(timeGroups).forEach(([_, groupSlots]) => {
+    let currentRange: TimeRange | null = null;
+    
+    groupSlots.forEach(slot => {
+      if (!currentRange) {
+        currentRange = {
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          days: [slot.dayOfWeek as DayOfWeek]
+        };
+        return;
+      }
+
+      // בדיקה אם היום הנוכחי רציף
+      if (slot.dayOfWeek === currentRange.days[currentRange.days.length - 1] + 1) {
+        currentRange.days.push(slot.dayOfWeek as DayOfWeek);
+      } else {
+        ranges.push(currentRange);
+        currentRange = {
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          days: [slot.dayOfWeek as DayOfWeek]
+        };
+      }
+    });
+
+    if (currentRange) {
+      ranges.push(currentRange);
+    }
+  });
+
+  return ranges.sort((a, b) => a.days[0] - b.days[0]);
+}
+
+const formatDayRange = (days: number[]) => {
   if (days.length === 1) {
     return DAYS[days[0]].label;
   }
-  if (days.length > 2) {
+  if (days.length > 2 && days[days.length - 1] === days[0] + days.length - 1) {
     return `${DAYS[days[0]].label} - ${DAYS[days[days.length - 1]].label}`;
   }
   return days.map(day => DAYS[day].label).join(', ');
+};
+
+const formatMinutes = (minutes: number): string => {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
 };
 
 export default function WorldTabs({ worlds, onTimeUpdate, onActivate, onDeactivate }: Props) {
@@ -123,6 +137,14 @@ export default function WorldTabs({ worlds, onTimeUpdate, onActivate, onDeactiva
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [worldToDeactivate, setWorldToDeactivate] = useState<{ id: string, name: string } | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [freeTimeSlots, setFreeTimeSlots] = useState<Array<{
+    days: number[];
+    slots: Array<{
+      start: string;
+      end: string;
+      duration: number;
+    }>;
+  }> | undefined>(undefined);
 
   const loadWorldGoals = useCallback(async (worldId: string) => {
     if (!user) return;
@@ -184,6 +206,150 @@ export default function WorldTabs({ worlds, onTimeUpdate, onActivate, onDeactiva
       loadWorldEntities(worlds[selectedIndex].id);
     }
   }, [worlds, selectedIndex, loadWorldEntities]);
+
+  const calculateFreeSlots = () => {
+    const occupiedSlots = new Map<number, Array<{ start: number; end: number }>>();
+    
+    // מילוי הזמנים התפוסים
+    worlds.forEach(w => {
+      w.timeSlots?.forEach(slot => {
+        if (!occupiedSlots.has(slot.dayOfWeek)) {
+          occupiedSlots.set(slot.dayOfWeek, []);
+        }
+        const minutes = {
+          start: parseInt(slot.startTime.split(':')[0]) * 60 + parseInt(slot.startTime.split(':')[1]),
+          end: parseInt(slot.endTime.split(':')[0]) * 60 + parseInt(slot.endTime.split(':')[1])
+        };
+        
+        // אם זה זמן שינה שחוצה את חצות
+        if (minutes.start > minutes.end) {
+          // מוסיף את החלק הראשון עד חצות
+          occupiedSlots.get(slot.dayOfWeek)?.push({
+            start: minutes.start,
+            end: 24 * 60
+          });
+          // מוסיף את החלק השני מתחילת היום
+          occupiedSlots.get(slot.dayOfWeek)?.push({
+            start: 0,
+            end: minutes.end
+          });
+        } else {
+          occupiedSlots.get(slot.dayOfWeek)?.push(minutes);
+        }
+      });
+    });
+
+    // מציאת זמנים פנויים
+    const initialFreeSlots: Array<{
+      day: number;
+      start: string;
+      end: string;
+      duration: number;
+    }> = [];
+
+    for (let day = 0; day < 7; day++) {
+      const daySlots = occupiedSlots.get(day) || [];
+      const sortedSlots = daySlots.sort((a, b) => a.start - b.start);
+      
+      // נמצא את הזמן ההתחלתי הזמין (אחרי זמני השינה)
+      let currentTime = 6 * 60; // ברירת מחדל 06:00
+      const firstSlot = sortedSlots[0];
+      if (firstSlot && firstSlot.end > currentTime) {
+        currentTime = firstSlot.end; // אם יש זמן שינה שמסתיים אחרי 06:00, נתחיל ממנו
+      }
+
+      const endOfDay = 23 * 60;
+
+      for (const slot of sortedSlots) {
+        if (slot.start > currentTime) {
+          const duration = slot.start - currentTime;
+          if (duration >= 30) {
+            initialFreeSlots.push({
+              day,
+              start: formatMinutes(currentTime),
+              end: formatMinutes(slot.start),
+              duration
+            });
+          }
+        }
+        currentTime = Math.max(currentTime, slot.end);
+      }
+
+      if (currentTime < endOfDay) {
+        const duration = endOfDay - currentTime;
+        if (duration >= 30) {
+          initialFreeSlots.push({
+            day,
+            start: formatMinutes(currentTime),
+            end: formatMinutes(endOfDay),
+            duration
+          });
+        }
+      }
+    }
+
+    return initialFreeSlots;
+  };
+
+  useEffect(() => {
+    const slots = calculateFreeSlots();
+    
+    // קיבוץ לפי זמני התחלה וסיום זהים
+    const timeGroups: Record<string, {
+      start: string;
+      end: string;
+      duration: number;
+      days: number[];
+    }> = {};
+
+    slots.forEach(slot => {
+      const timeKey = `${slot.start}-${slot.end}`;
+      if (!timeGroups[timeKey]) {
+        timeGroups[timeKey] = {
+          start: slot.start,
+          end: slot.end,
+          duration: slot.duration,
+          days: []
+        };
+      }
+      timeGroups[timeKey].days.push(slot.day);
+    });
+
+    // מיון וקיבוץ ימים רציפים
+    const groupedSlots = Object.values(timeGroups).map(group => {
+      const sortedDays = [...new Set(group.days)].sort((a, b) => a - b);
+      const dayRanges: number[][] = [];
+      let currentRange: number[] = [sortedDays[0]];
+
+      for (let i = 1; i < sortedDays.length; i++) {
+        if (sortedDays[i] === sortedDays[i-1] + 1) {
+          currentRange.push(sortedDays[i]);
+        } else {
+          dayRanges.push([...currentRange]);
+          currentRange = [sortedDays[i]];
+        }
+      }
+      dayRanges.push(currentRange);
+
+      return dayRanges.map(days => ({
+        days,
+        slots: [{
+          start: group.start,
+          end: group.end,
+          duration: group.duration
+        }]
+      }));
+    }).flat();
+
+    // מיון לפי ימים ושעות
+    const sortedGroups = groupedSlots.sort((a, b) => {
+      const dayDiff = a.days[0] - b.days[0];
+      if (dayDiff !== 0) return dayDiff;
+      return a.slots[0].start.localeCompare(b.slots[0].start);
+    });
+
+    setFreeTimeSlots(sortedGroups);
+  }, [worlds]);
 
   const handleEntityClick = (entity: WorldEntity) => {
     setSelectedEntity(entity);
@@ -346,6 +512,15 @@ export default function WorldTabs({ worlds, onTimeUpdate, onActivate, onDeactiva
                       </button>
                     </div>
                     
+                    {/* הודעה כשאין זמנים */}
+                    {(!world.timeSlots || world.timeSlots.length === 0) && (
+                      <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg mb-3">
+                        <p className="text-sm text-yellow-800">
+                          טרם הגדרת זמנים קבועים לעולם זה. הגדרת זמנים תעזור לך לתכנן ולנהל את המשימות שלך בצורה יעילה יותר.
+                        </p>
+                      </div>
+                    )}
+
                     {/* Time Slots Display */}
                     <div className="flex flex-wrap gap-2 justify-center">
                       {groupConsecutiveSlots(world.timeSlots || []).map((group, index) => (
@@ -378,6 +553,7 @@ export default function WorldTabs({ worlds, onTimeUpdate, onActivate, onDeactiva
                       isOpen={isAdding}
                       onClose={() => setIsAdding(false)}
                       world={world}
+                      freeTimeSlots={freeTimeSlots}
                       onUpdate={async (timeSlots) => {
                         await onTimeUpdate(world.id, timeSlots);
                         setIsAdding(false);

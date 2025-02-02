@@ -3,13 +3,23 @@ import { Fragment } from 'react';
 import { World, TimeSlot } from '@/app/types';
 import WorldTimeSettings from './WorldTimeSettings';
 
+const DAYS = [
+  { value: 0, label: 'ראשון' },
+  { value: 1, label: 'שני' },
+  { value: 2, label: 'שלישי' },
+  { value: 3, label: 'רביעי' },
+  { value: 4, label: 'חמישי' },
+  { value: 5, label: 'שישי' },
+  { value: 6, label: 'שבת' }
+] as const;
+
 interface TimeSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   world: World;
   onUpdate: (timeSlots: TimeSlot[]) => Promise<void>;
   freeTimeSlots?: Array<{
-    day: number;
+    days: number[];
     slots: Array<{
       start: string;
       end: string;
@@ -18,7 +28,7 @@ interface TimeSettingsModalProps {
   }>;
 }
 
-export default function TimeSettingsModal({ isOpen, onClose, world, onUpdate }: TimeSettingsModalProps) {
+export default function TimeSettingsModal({ isOpen, onClose, world, onUpdate, freeTimeSlots }: TimeSettingsModalProps) {
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
@@ -52,9 +62,10 @@ export default function TimeSettingsModal({ isOpen, onClose, world, onUpdate }: 
                 >
                   הגדרת זמנים - {world.name}
                 </Dialog.Title>
-                
+
                 <WorldTimeSettings 
                   world={world}
+                  freeTimeSlots={freeTimeSlots}
                   onUpdate={async (newTimeSlots) => {
                     await onUpdate(newTimeSlots);
                     onClose();
